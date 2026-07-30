@@ -18,6 +18,7 @@ export default function TrackerApp() {
   const [selectedDate, setSelectedDate] = useState(formatDate(new Date()));
   const [data, setData] = useState<DayData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -33,19 +34,33 @@ export default function TrackerApp() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`/api/summary?date=${selectedDate}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `HTTP ${res.status}`);
+      }
       setData(await res.json());
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
+    } catch (err) {
+      console.error("Fetch error:", err);
+      setError(err instanceof Error ? err.message : "Không thể tải dữ liệu");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [selectedDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleDelete = async (type: string, id: number) => {
     if (!confirm("Xóa?")) return;
-    await fetch(`/api/${type}/${id}`, { method: "DELETE" });
-    fetchData();
+    try {
+      await fetch(`/api/${type}/${id}`, { method: "DELETE" });
+      fetchData();
+    } catch {
+      alert("Lỗi khi xóa!");
+    }
   };
 
   const downloadImage = (base64: string, name: string) => {
@@ -108,6 +123,20 @@ export default function TrackerApp() {
           >
             📊 Xem báo cáo ngày {selectedDate}
           </button>
+        )}
+
+        {/* Error state */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-center">
+            <p className="text-red-600 font-medium mb-2">⚠️ {error}</p>
+            <p className="text-red-500 text-sm mb-3">Có thể database chưa được cấu hình.</p>
+            <button
+              onClick={fetchData}
+              className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-600"
+            >
+              Thử lại
+            </button>
+          </div>
         )}
 
         {loading ? (
@@ -275,6 +304,10 @@ export default function TrackerApp() {
               )}
             </Section>
           </>
+        ) : !error ? (
+          <div className="text-center py-10 text-text-muted">
+            <p>Không có dữ liệu</p>
+          </div>
         ) : null}
       </div>
 

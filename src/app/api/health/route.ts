@@ -3,18 +3,26 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  try {
-    // Only test DB if DATABASE_URL exists
-    if (process.env.DATABASE_URL) {
+  const result: Record<string, unknown> = {
+    ok: true,
+    time: new Date().toISOString(),
+    hasDbUrl: !!process.env.DATABASE_URL,
+  };
+
+  if (process.env.DATABASE_URL) {
+    try {
       const { db } = await import("@/db");
       const { sql } = await import("drizzle-orm");
-      await db.execute(sql`select 1`);
+      await db.execute(sql`SELECT 1`);
+      result.database = "connected";
+    } catch (error) {
+      result.ok = false;
+      result.database = "error";
+      result.dbError = error instanceof Error ? error.message : "Unknown error";
     }
-    return NextResponse.json({ ok: true, time: new Date().toISOString() });
-  } catch (error) {
-    return NextResponse.json({ 
-      ok: false, 
-      error: error instanceof Error ? error.message : "Unknown error" 
-    }, { status: 500 });
+  } else {
+    result.database = "no DATABASE_URL";
   }
+
+  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
 }
