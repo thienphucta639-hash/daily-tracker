@@ -5,13 +5,6 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Daily Tracker",
   description: "Theo dõi hoạt động hàng ngày",
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "32x32" },
-      { url: "/favicon.png", type: "image/png" },
-    ],
-    apple: "/apple-touch-icon.png",
-  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
