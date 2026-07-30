@@ -25,7 +25,6 @@ export function getCurrentTimeHHMM(): string {
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
-// Categorize meal time into period
 export function getMealPeriod(time: string | null): { label: string; emoji: string; order: number } {
   if (!time) return { label: "Khác", emoji: "🍽️", order: 5 };
   const [h] = time.split(":").map(Number);
@@ -48,20 +47,14 @@ export function formatDateDisplay(dateStr: string): string {
   if (dateStr === yesterdayStr) return "Hôm qua";
 
   const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
-  const months = [
-    "Thg 1", "Thg 2", "Thg 3", "Thg 4", "Thg 5", "Thg 6",
-    "Thg 7", "Thg 8", "Thg 9", "Thg 10", "Thg 11", "Thg 12",
-  ];
+  const months = ["Thg 1", "Thg 2", "Thg 3", "Thg 4", "Thg 5", "Thg 6", "Thg 7", "Thg 8", "Thg 9", "Thg 10", "Thg 11", "Thg 12"];
   return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]}`;
 }
 
 export function formatDateFull(dateStr: string): string {
   const date = new Date(dateStr + "T00:00:00");
   const days = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
-  const months = [
-    "tháng 1", "tháng 2", "tháng 3", "tháng 4", "tháng 5", "tháng 6",
-    "tháng 7", "tháng 8", "tháng 9", "tháng 10", "tháng 11", "tháng 12",
-  ];
+  const months = ["tháng 1", "tháng 2", "tháng 3", "tháng 4", "tháng 5", "tháng 6", "tháng 7", "tháng 8", "tháng 9", "tháng 10", "tháng 11", "tháng 12"];
   return `${days[date.getDay()]}, ngày ${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
 }
 
@@ -89,11 +82,41 @@ export function formatTimeVN(dateStr: string): string {
   return `${h12}:${m} ${period}`;
 }
 
-export function formatTimeFull(dateStr: string): string {
-  const d = new Date(dateStr);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+export function autoMealType(): string {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 10) return "breakfast";
+  if (h >= 10 && h < 14) return "lunch";
+  if (h >= 17 && h < 21) return "dinner";
+  return "snack";
 }
 
-export function durationBetween(start: string, end: string): number {
-  return Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
-}
+export const MEAL_TYPES = [
+  { value: "breakfast", label: "Sáng", emoji: "🌅" },
+  { value: "lunch", label: "Trưa", emoji: "☀️" },
+  { value: "dinner", label: "Tối", emoji: "🌙" },
+  { value: "snack", label: "Ăn vặt", emoji: "🍿" },
+];
+
+export const ACTIVITY_CATEGORIES = [
+  { value: "work", label: "Công việc", emoji: "💼" },
+  { value: "exercise", label: "Tập luyện", emoji: "🏃" },
+  { value: "study", label: "Học tập", emoji: "📚" },
+  { value: "personal", label: "Cá nhân", emoji: "🧘" },
+  { value: "entertainment", label: "Giải trí", emoji: "🎮" },
+  { value: "chores", label: "Việc nhà", emoji: "🏠" },
+  { value: "social", label: "Giao lưu", emoji: "👥" },
+  { value: "rest", label: "Nghỉ ngơi", emoji: "😴" },
+  { value: "eat", label: "Ăn uống", emoji: "🍜" },
+  { value: "travel", label: "Di chuyển", emoji: "🚗" },
+];
+
+export const EXPENSE_CATEGORIES = [
+  { value: "food", label: "Ăn uống", emoji: "🍜" },
+  { value: "transport", label: "Di chuyển", emoji: "🚗" },
+  { value: "shopping", label: "Mua sắm", emoji: "🛍️" },
+  { value: "bills", label: "Hóa đơn", emoji: "📄" },
+  { value: "entertainment", label: "Giải trí", emoji: "🎬" },
+  { value: "health", label: "Sức khỏe", emoji: "💊" },
+  { value: "education", label: "Học tập", emoji: "📖" },
+  { value: "other", label: "Khác", emoji: "📦" },
+];
