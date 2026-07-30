@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { meals, activities, expenses, dailyStatus, liveTracking } from "@/db/schema";
-import { eq, sql, asc } from "drizzle-orm";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const { db } = await import("@/db");
+  const { meals, activities, expenses, dailyStatus, liveTracking } = await import("@/db/schema");
+  const { eq, sql, asc } = await import("drizzle-orm");
+
   const date = request.nextUrl.searchParams.get("date");
   if (!date) {
     return NextResponse.json({ error: "Date required" }, { status: 400 });
@@ -50,7 +53,8 @@ export async function GET(request: NextRequest) {
         trackCount: tracks.length,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Error fetching daily report:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }

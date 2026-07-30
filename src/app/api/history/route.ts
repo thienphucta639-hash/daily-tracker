@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { meals, activities, expenses, liveTracking } from "@/db/schema";
-import { sql, desc, eq } from "drizzle-orm";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const { db } = await import("@/db");
+  const { meals, activities, expenses, liveTracking } = await import("@/db/schema");
+  const { sql, eq } = await import("drizzle-orm");
+
   try {
     // Get all unique dates that have any data
     const [mealDates, activityDates, expenseDates, trackDates] = await Promise.all([
@@ -54,7 +57,8 @@ export async function GET() {
     }
 
     return NextResponse.json(summaries);
-  } catch {
+  } catch (error) {
+    console.error("Error fetching history:", error);
     return NextResponse.json({ error: "Failed to fetch history" }, { status: 500 });
   }
 }

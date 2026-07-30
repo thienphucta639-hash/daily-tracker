@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { dailyStatus } from "@/db/schema";
-import { eq } from "drizzle-orm";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const { db } = await import("@/db");
+  const { dailyStatus } = await import("@/db/schema");
+  const { eq } = await import("drizzle-orm");
+
   const searchParams = request.nextUrl.searchParams;
   const date = searchParams.get("date");
 
@@ -17,12 +20,17 @@ export async function GET(request: NextRequest) {
     }
     const result = await db.select().from(dailyStatus).orderBy(dailyStatus.date);
     return NextResponse.json(result);
-  } catch {
+  } catch (error) {
+    console.error("Error fetching daily status:", error);
     return NextResponse.json({ error: "Failed to fetch daily status" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const { db } = await import("@/db");
+  const { dailyStatus } = await import("@/db/schema");
+  const { eq } = await import("drizzle-orm");
+
   try {
     const body = await request.json();
 
@@ -54,7 +62,8 @@ export async function POST(request: NextRequest) {
       dailyNote: body.dailyNote || null,
     }).returning();
     return NextResponse.json(result[0], { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("Error saving daily status:", error);
     return NextResponse.json({ error: "Failed to save daily status" }, { status: 500 });
   }
 }

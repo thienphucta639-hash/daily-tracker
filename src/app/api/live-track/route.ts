@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { liveTracking } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const { db } = await import("@/db");
+  const { liveTracking } = await import("@/db/schema");
+  const { eq, desc } = await import("drizzle-orm");
+
   try {
     const active = await db
       .select()
@@ -23,12 +26,17 @@ export async function GET() {
       active: active[0] || null,
       recent,
     });
-  } catch {
+  } catch (error) {
+    console.error("Error fetching live track:", error);
     return NextResponse.json({ error: "Failed to fetch" }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
+  const { db } = await import("@/db");
+  const { liveTracking } = await import("@/db/schema");
+  const { eq } = await import("drizzle-orm");
+
   try {
     const body = await request.json();
 
@@ -50,12 +58,17 @@ export async function POST(request: NextRequest) {
     }).returning();
 
     return NextResponse.json(result[0], { status: 201 });
-  } catch {
+  } catch (error) {
+    console.error("Error starting track:", error);
     return NextResponse.json({ error: "Failed to start tracking" }, { status: 500 });
   }
 }
 
 export async function PUT() {
+  const { db } = await import("@/db");
+  const { liveTracking } = await import("@/db/schema");
+  const { eq } = await import("drizzle-orm");
+
   try {
     const result = await db
       .update(liveTracking)
@@ -63,7 +76,8 @@ export async function PUT() {
       .where(eq(liveTracking.isActive, true))
       .returning();
     return NextResponse.json(result[0] || null);
-  } catch {
+  } catch (error) {
+    console.error("Error stopping track:", error);
     return NextResponse.json({ error: "Failed to stop tracking" }, { status: 500 });
   }
 }

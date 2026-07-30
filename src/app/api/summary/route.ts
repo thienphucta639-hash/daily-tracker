@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { meals, activities, expenses, dailyStatus } from "@/db/schema";
-import { eq } from "drizzle-orm";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const date = searchParams.get("date");
+  const { db } = await import("@/db");
+  const { meals, activities, expenses, dailyStatus } = await import("@/db/schema");
+  const { eq } = await import("drizzle-orm");
+
+  const date = request.nextUrl.searchParams.get("date");
 
   if (!date) {
     return NextResponse.json({ error: "Date is required" }, { status: 400 });
@@ -37,7 +39,8 @@ export async function GET(request: NextRequest) {
         expensesCount: expensesList.length,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Error fetching summary:", error);
     return NextResponse.json({ error: "Failed to fetch summary" }, { status: 500 });
   }
 }
