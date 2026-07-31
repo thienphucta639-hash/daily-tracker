@@ -48,6 +48,16 @@ export default function App() {
   const [qnotes, setQnotes] = useState<S.QuickNote[]>([]);
   const [pomoSessions, setPomoSessions] = useState<S.PomodoroSession[]>([]);
   const [tab, setTab] = useState<"main" | "exp">("main");
+  const [now, setNow] = useState(Date.now());
+  // Timer state lifted to top so it shows in header
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerMsLeft, setTimerMsLeft] = useState(0);
+  const [timerSetting, setTimerSetting] = useState(false);
+  const [timerCustom, setTimerCustom] = useState("25");
+  const [timerLabel, setTimerLabel] = useState("");
+  const timerTotalMin = useRef(25);
+  const timerEnd = useRef(0);
+  const timerDone = useRef(false);
 
   const isToday = date === formatDate(new Date());
   const tog = (k: string) => setCol(p => ({ ...p, [k]: !p[k] }));
@@ -68,6 +78,61 @@ export default function App() {
     tick(); const i = setInterval(tick, 1000); return () => clearInterval(i);
   }, [live]);
 
+  // Realtime clock + timer tick — single rAF loop
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      setNow(Date.now());
+      if (timerRunning) {
+        const rem = timerEnd.current - Date.now();
+        if (rem <= 0 && !timerDone.current) {
+          timerDone.current = true;
+          setTimerMsLeft(0);
+          setTimerRunning(false);
+          playAlarm();
+          const mins = timerTotalMin.current;
+          const lbl = timerLabel || "Focus";
+          S.addPomoSession(date, lbl, mins);
+          S.addActivity({ date, category: "work", title: `⏰ ${lbl} (${mins}p)`, description: null, durationMinutes: mins, startTime: null, endTime: null });
+          reload();
+        } else {
+          setTimerMsLeft(Math.max(0, rem));
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [timerRunning, date, timerLabel, reload]);
+
+  const startTimer = (mins: number) => {
+    timerTotalMin.current = mins;
+    timerEnd.current = Date.now() + mins * 60 * 1000;
+    timerDone.current = false;
+    setTimerMsLeft(mins * 60 * 1000);
+    setTimerRunning(true);
+    setTimerSetting(false);
+  };
+  const stopTimer = () => { setTimerRunning(false); setTimerMsLeft(0); };
+
+  const fmtClock = (ts: number) => {
+    const d = new Date(ts);
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    const s = String(d.getSeconds()).padStart(2, "0");
+    return { h, m, s };
+  };
+
+  const fmtCountdown = (ms: number) => {
+    const totalS = Math.floor(ms / 1000);
+    const h = Math.floor(totalS / 3600);
+    const m = Math.floor((totalS % 3600) / 60);
+    const s = totalS % 60;
+    const cs = String(Math.floor((ms % 1000) / 10)).padStart(2, "0");
+    const time = h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return { time, cs };
+  };
+
   const del = (t: string, id: string) => { if (!confirm("Xóa?")) return; if (t === "m") S.deleteMeal(id); if (t === "a") S.deleteActivity(id); if (t === "e") S.deleteExpense(id); reload(); };
   const totCal = meals.reduce((s, m) => s + (m.calories || 0), 0);
   const totExp = exps.reduce((s, e) => s + e.amount, 0);
@@ -85,37 +150,83 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg flex flex-col">
-      {/* STICKY HEADER — date + stats, always visible */}
+      {/* STICKY HEADER — clock + timer always visible */}
       <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur-md border-b border-line">
         <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
         <div className="max-w-xl mx-auto px-3 pt-2 pb-2">
+          {/* Row 1: name + clock + history */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-bold tracking-tight uppercase">Jay Tracker</h1>
               {streak > 0 && <span className="flex items-center gap-0.5 bg-gold/15 text-gold px-1.5 py-0.5 rounded text-[10px] font-bold tnum"><Ic d={P.flame} size={11} sw={2.5} />{streak}</span>}
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
+              {/* LIVE CLOCK — always running */}
+              {(() => { const c = fmtClock(now); return (
+                <div className="flex items-baseline gap-0.5 tnum">
+                  <span className="text-lg font-bold tracking-tight text-ink">{c.h}:{c.m}</span>
+                  <span className="text-[10px] text-mute font-semibold">:{c.s}</span>
+                </div>
+              ); })()}
               <button onClick={() => setModal("hist")} className="w-7 h-7 rounded-lg bg-card border border-line hover:border-mute flex items-center justify-center text-mute hover:text-ink transition-colors"><Ic d={P.calendar} size={14} /></button>
             </div>
           </div>
-          {/* Date bar — only forward, today is day 1 */}
-          <div className="flex items-center justify-between mt-1.5">
-            <div className="text-center flex-1">
-              <span className="font-bold text-xs">{fmtDateDisp(date)}</span>
-              {isToday && <span className="text-mute text-[9px] ml-1.5">· {getTimeEmoji()} {getTimeOfDay()}</span>}
+
+          {/* Row 2: Timer countdown OR timer setup button */}
+          {timerRunning ? (() => {
+            const cd = fmtCountdown(timerMsLeft);
+            const urgent = timerMsLeft < 10000;
+            return (
+              <div className={`flex items-center gap-2 mt-1.5 rounded-lg px-2.5 py-1.5 ${urgent ? "bg-red/15 border border-red/30" : "bg-card border border-line"}`}>
+                <div className={`w-2 h-2 rounded-full shrink-0 ${urgent ? "bg-red a-blink" : "bg-gold a-blink"}`} />
+                <span className="text-[10px] text-mute truncate flex-1">{timerLabel || "Focus"} · {timerTotalMin.current}p</span>
+                <span className={`font-bold text-base tnum tracking-tight ${urgent ? "text-red" : "text-ink"}`}>{cd.time}</span>
+                <span className="text-[9px] text-mute tnum">.{cd.cs}</span>
+                <button onClick={stopTimer} className="text-red text-[10px] font-bold ml-1 active:scale-95">Hủy</button>
+              </div>
+            );
+          })() : timerSetting ? (
+            <div className="mt-1.5 bg-card rounded-lg border border-line p-2">
+              <input type="text" value={timerLabel} onChange={e => setTimerLabel(e.target.value)} placeholder="Việc gì..." className="w-full px-2 py-1 rounded-md bg-bg2 border border-line text-xs outline-none focus:border-ink mb-1.5" />
+              <div className="flex gap-1 mb-1.5 overflow-x-auto">
+                {[1, 3, 5, 10, 15, 25, 30, 45, 60, 90].map(m => (
+                  <button key={m} onClick={() => setTimerCustom(String(m))}
+                    className={`shrink-0 px-2 py-1 rounded-md text-[10px] font-bold transition-all ${timerCustom === String(m) ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{m}p</button>
+                ))}
+              </div>
+              <div className="flex gap-1.5 items-center">
+                <input type="number" value={timerCustom} onChange={e => setTimerCustom(e.target.value)} min="1" className="w-12 px-1.5 py-1 rounded-md bg-bg2 border border-line text-xs text-center outline-none tnum" />
+                <span className="text-[10px] text-mute">phút</span>
+                <div className="flex-1" />
+                <button onClick={() => setTimerSetting(false)} className="px-2 py-1 bg-bg2 text-mute rounded-md text-[10px] font-bold">Hủy</button>
+                <button onClick={() => startTimer(parseInt(timerCustom) || 25)} className="px-3 py-1 bg-ink text-bg rounded-md text-[10px] font-bold active:scale-95">Bắt đầu</button>
+              </div>
             </div>
-            <div className="flex gap-0.5">
-              {!isToday && <button onClick={() => setDate(formatDate(new Date()))} className="px-2 h-7 rounded-md bg-ink/10 text-ink text-[10px] font-bold transition-colors">Nay</button>}
-              <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); setDate(formatDate(d)); }} className="w-7 h-7 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors"><Ic d={P.right} size={13} /></button>
-            </div>
-          </div>
-          {/* Stats inline */}
-          {(totCal > 0 || totExp > 0 || totAct > 0) && (
-            <div className="flex gap-1 mt-1.5 overflow-x-auto">
-              {totCal > 0 && <span className="shrink-0 bg-gold2 text-gold border border-gold/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">🔥{totCal.toLocaleString()}</span>}
-              {totExp > 0 && <span className="shrink-0 bg-red2 text-red border border-red/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">💸{fmtCurrency(totExp)}</span>}
-              {totAct > 0 && <span className="shrink-0 bg-blue2 text-blue border border-blue/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">⏱{fmtDur(totAct)}</span>}
-            </div>
+          ) : (
+            /* Row 2 normal: date + stats + timer button */
+            <>
+              <div className="flex items-center justify-between mt-1.5">
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  <span className="font-bold text-xs">{fmtDateDisp(date)}</span>
+                  {isToday && <span className="text-mute text-[9px]">{getTimeEmoji()} {getTimeOfDay()}</span>}
+                </div>
+                <div className="flex gap-1 items-center">
+                  <button onClick={() => setTimerSetting(true)} className="flex items-center gap-1 bg-card border border-line hover:border-ink px-2 py-1 rounded-md text-[10px] font-bold text-mute hover:text-ink transition-colors active:scale-95">
+                    <Ic d={P.clock} size={12} /> Hẹn giờ
+                  </button>
+                  {!isToday && <button onClick={() => setDate(formatDate(new Date()))} className="px-2 h-7 rounded-md bg-ink/10 text-ink text-[10px] font-bold">Nay</button>}
+                  <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); setDate(formatDate(d)); }} className="w-7 h-7 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors"><Ic d={P.right} size={13} /></button>
+                </div>
+              </div>
+              {/* Stats */}
+              {(totCal > 0 || totExp > 0 || totAct > 0) && (
+                <div className="flex gap-1 mt-1 overflow-x-auto">
+                  {totCal > 0 && <span className="shrink-0 bg-gold2 text-gold border border-gold/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">🔥{totCal.toLocaleString()}</span>}
+                  {totExp > 0 && <span className="shrink-0 bg-red2 text-red border border-red/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">💸{fmtCurrency(totExp)}</span>}
+                  {totAct > 0 && <span className="shrink-0 bg-blue2 text-blue border border-blue/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">⏱{fmtDur(totAct)}</span>}
+                </div>
+              )}
+            </>
           )}
         </div>
       </header>
@@ -176,8 +287,7 @@ export default function App() {
               </div>
             )}
 
-            {/* POMO */}
-            {isToday && <div className="flex gap-1.5"><Pomo date={date} sessions={pomoSessions} onDone={reload} /></div>}
+
 
             {/* HABITS */}
             {habits.length > 0 && (
@@ -389,119 +499,24 @@ function Sec({ title, icon, count, c, onT, onA, extra, children }: { title: stri
   </div>{!c && <div className="px-2.5 pb-2.5">{children}</div>}</section>);
 }
 
-/* ═══ TIMER — custom minutes + alarm sound ═══ */
+/* ═══ ALARM SOUND — used by timer in header ═══ */
 function playAlarm() {
   try {
     const ac = new AudioContext();
-    const play = (freq: number, start: number, dur: number) => {
-      const o = ac.createOscillator();
-      const g = ac.createGain();
-      o.type = "sine"; o.frequency.value = freq;
-      g.gain.setValueAtTime(0.3, ac.currentTime + start);
-      g.gain.exponentialRampToValueAtTime(0.01, ac.currentTime + start + dur);
+    const ring = (freq: number, t: number, dur: number) => {
+      const o = ac.createOscillator(); const g = ac.createGain();
+      o.type = "square"; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.25, ac.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + t + dur);
       o.connect(g); g.connect(ac.destination);
-      o.start(ac.currentTime + start); o.stop(ac.currentTime + start + dur);
+      o.start(ac.currentTime + t); o.stop(ac.currentTime + t + dur);
     };
-    // Ring pattern: beep-beep-beep × 3
-    for (let i = 0; i < 3; i++) {
-      play(880, i * 0.8, 0.15);
-      play(880, i * 0.8 + 0.2, 0.15);
-      play(1100, i * 0.8 + 0.4, 0.25);
+    for (let i = 0; i < 5; i++) {
+      ring(880, i * 0.5, 0.12);
+      ring(880, i * 0.5 + 0.15, 0.12);
+      ring(1320, i * 0.5 + 0.3, 0.15);
     }
-  } catch { /* ignore if audio blocked */ }
-}
-
-function Pomo({ date, sessions, onDone }: { date: string; sessions: S.PomodoroSession[]; onDone: () => void }) {
-  const [running, setRunning] = useState(false);
-  const [left, setLeft] = useState(25 * 60);
-  const [setting, setSetting] = useState(false);
-  const [customMin, setCustomMin] = useState("25");
-  const [label, setLabel] = useState("");
-  const totalMin = useRef(25);
-  const ref = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (!running) return;
-    ref.current = setInterval(() => {
-      setLeft(p => {
-        if (p <= 1) {
-          clearInterval(ref.current!);
-          setRunning(false);
-          playAlarm();
-          const mins = totalMin.current;
-          const lbl = label || "Focus";
-          S.addPomoSession(date, lbl, mins);
-          S.addActivity({ date, category: "work", title: `⏰ ${lbl} (${mins}p)`, description: null, durationMinutes: mins, startTime: null, endTime: null });
-          onDone();
-          return mins * 60;
-        }
-        return p - 1;
-      });
-    }, 1000);
-    return () => { if (ref.current) clearInterval(ref.current); };
-  }, [running, date, label, onDone]);
-
-  const mm = Math.floor(left / 60);
-  const ss = left % 60;
-
-  const startTimer = (mins: number) => {
-    totalMin.current = mins;
-    setLeft(mins * 60);
-    setRunning(true);
-    setSetting(false);
-  };
-
-  const stopTimer = () => {
-    setRunning(false);
-    if (ref.current) clearInterval(ref.current);
-    setLeft(totalMin.current * 60);
-  };
-
-  // Running state — show countdown
-  if (running) {
-    return (
-      <div className="bg-card rounded-lg border border-red/30 p-2.5 flex items-center gap-2.5 a-rise w-full">
-        <div className="w-8 h-8 rounded-lg bg-red2 border border-red/20 flex items-center justify-center text-red shrink-0"><Ic d={P.clock} size={14} /></div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[9px] text-red font-bold uppercase tracking-widest">Đang đếm ngược</div>
-          <div className="text-[11px] text-mute truncate">{label || "Focus"} · {totalMin.current}p</div>
-        </div>
-        <div className="font-bold text-xl tnum tracking-tight text-ink shrink-0">{String(mm).padStart(2, "0")}:{String(ss).padStart(2, "0")}</div>
-        <button onClick={stopTimer} className="px-2 py-1 bg-red/15 border border-red/25 text-red rounded-md text-[10px] font-bold active:scale-95 shrink-0">Hủy</button>
-      </div>
-    );
-  }
-
-  // Setting state — pick time
-  if (setting) {
-    return (
-      <div className="bg-card rounded-lg border border-line p-2.5 a-pop w-full">
-        <div className="text-[9px] text-mute2 font-bold uppercase tracking-widest mb-1.5">Hẹn giờ</div>
-        <input type="text" value={label} onChange={e => setLabel(e.target.value)} placeholder="Việc gì..." className="w-full px-2.5 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none focus:border-ink mb-1.5" />
-        <div className="flex gap-1.5 mb-1.5">
-          {[5, 10, 15, 25, 30, 45, 60].map(m => (
-            <button key={m} onClick={() => { setCustomMin(String(m)); }}
-              className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${customMin === String(m) ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{m}p</button>
-          ))}
-        </div>
-        <div className="flex gap-1.5">
-          <input type="number" value={customMin} onChange={e => setCustomMin(e.target.value)} min="1" max="999" className="w-16 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs text-center outline-none focus:border-ink tnum" />
-          <span className="text-[10px] text-mute self-center">phút</span>
-          <div className="flex-1" />
-          <button onClick={() => setSetting(false)} className="px-2.5 py-1.5 bg-bg2 text-mute rounded-md text-[10px] font-bold">Hủy</button>
-          <button onClick={() => { const m = parseInt(customMin) || 25; startTimer(m); }} className="px-3 py-1.5 bg-ink text-bg rounded-md text-[10px] font-bold active:scale-95">Bắt đầu</button>
-        </div>
-      </div>
-    );
-  }
-
-  // Idle — show button to open setting
-  return (
-    <button onClick={() => setSetting(true)} className="flex items-center gap-1.5 bg-card border border-line hover:border-ink px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-mute hover:text-ink transition-all active:scale-95">
-      <Ic d={P.clock} size={13} /> Hẹn giờ
-      {sessions.length > 0 && <span className="bg-red2 text-red border border-red/20 px-1 py-0.5 rounded text-[9px] tnum">{sessions.length}</span>}
-    </button>
-  );
+  } catch { /* blocked */ }
 }
 
 function DayNote({ status, date, onSave }: { status: S.DailyStatus | null; date: string; onSave: () => void }) {
@@ -528,11 +543,22 @@ function DayNote({ status, date, onSave }: { status: S.DailyStatus | null; date:
   </div>);
 }
 
-/* ═══ MODALS ═══ */
+/* ═══ MODALS — keyboard-safe: content scrolls, input auto-scrolls into view ═══ */
 function Wrap({ children, title, onClose }: { children: ReactNode; title: string; onClose: () => void }) {
-  return (<div className="fixed inset-0 bg-bg/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0" onClick={onClose}>
-    <div onClick={e => e.stopPropagation()} className="bg-card w-full sm:max-w-md sm:rounded-xl rounded-t-xl p-3.5 max-h-[85vh] overflow-y-auto a-rise border border-line">
-      <div className="flex items-center justify-between mb-2.5"><h2 className="font-bold text-sm">{title}</h2><button onClick={onClose} className="w-7 h-7 rounded-md bg-bg2 hover:bg-red/15 hover:text-red flex items-center justify-center text-mute transition-colors"><Ic d={P.x} size={13} /></button></div>{children}
+  return (<div className="fixed inset-0 bg-bg/80 backdrop-blur-sm z-50 flex flex-col justify-end sm:justify-center sm:items-center" onClick={onClose}>
+    <div onClick={e => e.stopPropagation()}
+      className="bg-card w-full sm:max-w-md sm:rounded-xl rounded-t-xl p-3.5 a-rise border border-line sm:max-h-[85vh] max-h-[70vh] flex flex-col"
+      style={{ maxHeight: "calc(100dvh - env(keyboard-inset-height, 0px) - 20px)" }}>
+      <div className="flex items-center justify-between mb-2.5 shrink-0">
+        <h2 className="font-bold text-sm">{title}</h2>
+        <button onClick={onClose} className="w-7 h-7 rounded-md bg-bg2 hover:bg-red/15 hover:text-red flex items-center justify-center text-mute transition-colors"><Ic d={P.x} size={13} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto overscroll-contain [&_input]:scroll-mt-4" onFocus={e => {
+        const t = e.target as HTMLElement;
+        if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") {
+          setTimeout(() => t.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+        }
+      }}>{children}</div>
     </div></div>);
 }
 const ic = "w-full px-3 py-2 rounded-md bg-bg2 border border-line outline-none focus:border-ink text-sm transition-colors";

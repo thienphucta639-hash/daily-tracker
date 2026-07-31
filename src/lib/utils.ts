@@ -46,11 +46,15 @@ export function mealPeriod(time: string | null): { label: string; emoji: string;
 export function fmtDateDisp(s: string): string {
   const d = new Date(s + "T00:00:00");
   const today = formatDate(new Date());
-  if (s === today) return "Hôm nay";
-  const y = new Date(); y.setDate(y.getDate() - 1);
-  if (s === formatDate(y)) return "Hôm qua";
   const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
-  return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}`;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const full = `${days[d.getDay()]}, ${dd}/${mm}/${yyyy}`;
+  if (s === today) return `Hôm nay · ${dd}/${mm}/${yyyy}`;
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  if (s === formatDate(y)) return `Hôm qua · ${dd}/${mm}/${yyyy}`;
+  return full;
 }
 
 export function fmtDateFull(s: string): string {
