@@ -7,6 +7,7 @@ import {
   MEALS, ACTS, EXPS,
 } from "@/lib/utils";
 import * as S from "@/lib/storage";
+import { migrateTimezone } from "@/lib/migrate";
 
 /* ═══ ICONS ═══ */
 function Ic({ d, size = 18, sw = 1.8, cls }: { d: string; size?: number; sw?: number; cls?: string }) {
@@ -70,7 +71,7 @@ export default function App() {
     setQnotes(S.getQuickNotes(date)); setPomoSessions(S.getPomoSessions(date));
   }, [date]);
 
-  useEffect(() => { setOk(true); }, []);
+  useEffect(() => { migrateTimezone(); setOk(true); }, []);
   useEffect(() => { if (ok) reload(); }, [ok, reload]);
   useEffect(() => {
     if (!live) { setElapsed(0); return; }
@@ -78,42 +79,57 @@ export default function App() {
     tick(); const i = setInterval(tick, 1000); return () => clearInterval(i);
   }, [live]);
 
-  // Realtime clock + timer tick — single rAF loop
+  // Refs so rAF callback always sees latest values
+  const timerLabelRef = useRef(timerLabel);
+  timerLabelRef.current = timerLabel;
+  const dateRef = useRef(date);
+  dateRef.current = date;
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+
+  // Single rAF loop — always runs for clock, also handles timer
   useEffect(() => {
     let raf = 0;
     const tick = () => {
       setNow(Date.now());
-      if (timerRunning) {
+      if (timerEnd.current > 0 && !timerDone.current) {
         const rem = timerEnd.current - Date.now();
-        if (rem <= 0 && !timerDone.current) {
+        if (rem <= 0) {
           timerDone.current = true;
           setTimerMsLeft(0);
           setTimerRunning(false);
+          timerEnd.current = 0;
           playAlarm();
           const mins = timerTotalMin.current;
-          const lbl = timerLabel || "Focus";
-          S.addPomoSession(date, lbl, mins);
-          S.addActivity({ date, category: "work", title: `⏰ ${lbl} (${mins}p)`, description: null, durationMinutes: mins, startTime: null, endTime: null });
-          reload();
+          const lbl = timerLabelRef.current || "Focus";
+          S.addPomoSession(dateRef.current, lbl, mins);
+          S.addActivity({ date: dateRef.current, category: "work", title: `⏰ ${lbl} (${mins}p)`, description: null, durationMinutes: mins, startTime: null, endTime: null });
+          reloadRef.current();
         } else {
-          setTimerMsLeft(Math.max(0, rem));
+          setTimerMsLeft(rem);
         }
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [timerRunning, date, timerLabel, reload]);
+  }, []); // empty deps — runs once, uses refs
 
   const startTimer = (mins: number) => {
     timerTotalMin.current = mins;
-    timerEnd.current = Date.now() + mins * 60 * 1000;
     timerDone.current = false;
-    setTimerMsLeft(mins * 60 * 1000);
+    const ms = mins * 60 * 1000;
+    timerEnd.current = Date.now() + ms;
+    setTimerMsLeft(ms);
     setTimerRunning(true);
     setTimerSetting(false);
   };
-  const stopTimer = () => { setTimerRunning(false); setTimerMsLeft(0); };
+  const stopTimer = () => {
+    setTimerRunning(false);
+    setTimerMsLeft(0);
+    timerEnd.current = 0;
+    timerDone.current = true;
+  };
 
   const fmtClock = (ts: number) => {
     const d = new Date(ts);
@@ -655,15 +671,159 @@ function QNModal({ date, onDone, onClose }: { date: string; onDone: () => void; 
   </Wrap>);
 }
 
-function InvModal({ date, exps, onClose }: { date: string; exps: S.Expense[]; onClose: () => void }) {
-  const total = exps.reduce((s, e) => s + e.amount, 0);
-  const grouped: Record<string, S.Expense[]> = {}; exps.forEach(e => { (grouped[e.category] = grouped[e.category] || []).push(e); });
-  return (<Wrap title="Hóa đơn" onClose={onClose}>
-    <div className="text-center mb-2.5"><div className="font-bold text-sm uppercase tracking-wider">Hóa đơn</div><div className="text-[11px] text-mute">{fmtDateFull(date)}</div></div>
-    <div className="space-y-2">{Object.entries(grouped).map(([cat, items]) => { const ec = EXPS.find(x => x.value === cat); return (<div key={cat}><div className="flex items-center justify-between text-xs font-bold mb-0.5"><span className="text-ink2">{ec?.emoji} {ec?.label}</span><span className="text-red tnum">{fmtCurrency(items.reduce((s, e) => s + e.amount, 0))}</span></div>
-      {items.map(it => (<div key={it.id} className="flex items-center justify-between pl-4 py-0.5 text-[11px]"><span className="truncate flex-1 text-ink2">{it.description}</span><span className="text-mute tnum shrink-0 ml-2">{fmtCurrency(it.amount)}</span></div>))}</div>); })}</div>
-    <div className="border-t border-dashed border-line mt-3 pt-2 flex items-center justify-between"><span className="font-bold text-sm uppercase">Tổng</span><span className="font-bold text-lg text-red tnum">{fmtCurrency(total)}</span></div>
-    <div className="flex gap-2 mt-3"><button onClick={() => { const d = encodeURIComponent(JSON.stringify({ date, total, items: exps.map(e => ({ description: e.description, amount: e.amount, category: e.category })) })); window.open(`https://saving-y2k.vercel.app/?expenses=${d}`, "_blank"); }} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-ink hover:bg-accent text-bg rounded-lg text-xs font-bold transition-colors active:scale-[0.98]"><Ic d={P.receipt} size={14} /> Xuất hóa đơn</button></div>
+function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expense[]; onClose: () => void }) {
+  const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
+  const [fromDate, setFromDate] = useState(date);
+  const [toDate, setToDate] = useState(date);
+
+  // Gather expenses based on range
+  let allExps = dayExps;
+  let rangeLabel = fmtDateFull(date);
+  if (range === "week") {
+    const d = new Date(); const from = new Date(d); from.setDate(d.getDate() - 6);
+    const f = formatDate(from); const t = formatDate(d);
+    allExps = S.getExpenses().filter(e => e.date >= f && e.date <= t);
+    rangeLabel = `${fmtDateDisp(f)} → ${fmtDateDisp(t)}`;
+  } else if (range === "month") {
+    const d = new Date(); const f = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    allExps = S.getExpenses().filter(e => e.date >= f && e.date <= formatDate(d));
+    rangeLabel = `Tháng ${d.getMonth() + 1}/${d.getFullYear()}`;
+  } else if (range === "custom") {
+    allExps = S.getExpenses().filter(e => e.date >= fromDate && e.date <= toDate);
+    rangeLabel = `${fmtDateDisp(fromDate)} → ${fmtDateDisp(toDate)}`;
+  }
+
+  const total = allExps.reduce((s, e) => s + e.amount, 0);
+  const grouped: Record<string, S.Expense[]> = {};
+  allExps.forEach(e => { (grouped[e.category] = grouped[e.category] || []).push(e); });
+  const count = allExps.length;
+
+  const downloadInvoice = () => {
+    const W = 600; const pad = 40;
+    const c = document.createElement("canvas");
+    const ctx = c.getContext("2d")!;
+    c.width = W; c.height = 2000; // will crop later
+    ctx.fillStyle = "#0a0a0a"; ctx.fillRect(0, 0, W, 2000);
+
+    let y = pad;
+    // Header bar
+    ctx.fillStyle = "#1a1a1a"; ctx.fillRect(0, 0, W, 80);
+    ctx.fillStyle = "#ffa502"; ctx.fillRect(0, 78, W, 3);
+
+    ctx.font = "bold 22px 'Space Grotesk', sans-serif";
+    ctx.fillStyle = "#f0f0f0"; ctx.textAlign = "center";
+    ctx.fillText("JAY TRACKER — HÓA ĐƠN", W / 2, 35);
+    ctx.font = "13px 'Space Grotesk', sans-serif";
+    ctx.fillStyle = "#888888";
+    ctx.fillText(rangeLabel, W / 2, 58);
+    y = 100;
+
+    // Items
+    ctx.textAlign = "left";
+    Object.entries(grouped).forEach(([cat, items]) => {
+      const ec = EXPS.find(x => x.value === cat);
+      const sub = items.reduce((s, e) => s + e.amount, 0);
+      // Category header
+      ctx.fillStyle = "#222222"; ctx.fillRect(pad - 10, y - 5, W - 2 * pad + 20, 28);
+      ctx.font = "bold 14px 'Space Grotesk', sans-serif";
+      ctx.fillStyle = "#f0f0f0"; ctx.fillText(`${ec?.emoji || ""} ${ec?.label || cat}`, pad, y + 14);
+      ctx.textAlign = "right"; ctx.fillStyle = "#ff4757";
+      ctx.fillText(fmtCurrency(sub), W - pad, y + 14);
+      ctx.textAlign = "left"; y += 35;
+      // Items
+      ctx.font = "13px 'Space Grotesk', sans-serif";
+      items.forEach(it => {
+        ctx.fillStyle = "#d4d4d4"; ctx.fillText(it.description, pad + 12, y);
+        ctx.textAlign = "right"; ctx.fillStyle = "#888888";
+        ctx.fillText(fmtCurrency(it.amount), W - pad, y);
+        ctx.textAlign = "left"; y += 22;
+      });
+      y += 8;
+    });
+
+    // Divider
+    y += 5;
+    ctx.strokeStyle = "#333333"; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+    ctx.setLineDash([]); y += 25;
+
+    // Total
+    ctx.font = "bold 18px 'Space Grotesk', sans-serif";
+    ctx.fillStyle = "#f0f0f0"; ctx.fillText("TỔNG CỘNG", pad, y);
+    ctx.textAlign = "right"; ctx.fillStyle = "#ff4757";
+    ctx.font = "bold 24px 'Space Grotesk', sans-serif";
+    ctx.fillText(fmtCurrency(total), W - pad, y);
+    y += 15;
+
+    // Footer
+    y += 20;
+    ctx.fillStyle = "#333333"; ctx.fillRect(0, y, W, 1);
+    y += 15;
+    ctx.textAlign = "center"; ctx.font = "11px 'Space Grotesk', sans-serif"; ctx.fillStyle = "#666666";
+    ctx.fillText(`${count} khoản · Jay Tracker`, W / 2, y);
+    y += 25;
+
+    // Crop canvas
+    const final = document.createElement("canvas");
+    final.width = W; final.height = y;
+    final.getContext("2d")!.drawImage(c, 0, 0);
+
+    const a = document.createElement("a");
+    a.download = `hoa-don-${range === "day" ? date : range}.png`;
+    a.href = final.toDataURL("image/png");
+    a.click();
+  };
+
+  return (<Wrap title="Xuất hóa đơn" onClose={onClose}>
+    {/* Range selector */}
+    <div className="flex gap-1 mb-2.5">
+      {([["day", "Ngày"], ["week", "7 ngày"], ["month", "Tháng"], ["custom", "Tùy chọn"]] as const).map(([v, l]) => (
+        <button key={v} onClick={() => setRange(v)}
+          className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${range === v ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{l}</button>
+      ))}
+    </div>
+    {range === "custom" && (
+      <div className="flex gap-2 mb-2.5">
+        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none" />
+        <span className="text-mute self-center text-xs">→</span>
+        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none" />
+      </div>
+    )}
+
+    {/* Preview */}
+    <div className="text-center mb-2"><div className="text-[10px] text-mute">{rangeLabel}</div><div className="font-bold text-xl text-red tnum mt-0.5">{fmtCurrency(total)}</div><div className="text-[10px] text-mute">{count} khoản</div></div>
+
+    {count === 0 ? <p className="text-center text-mute text-xs py-4">Không có chi tiêu trong khoảng này</p> : (
+      <div className="space-y-1.5 max-h-[30vh] overflow-y-auto">
+        {Object.entries(grouped).map(([cat, items]) => {
+          const ec = EXPS.find(x => x.value === cat);
+          return (<div key={cat}>
+            <div className="flex items-center justify-between text-xs font-bold mb-0.5">
+              <span className="text-ink2">{ec?.emoji} {ec?.label}</span>
+              <span className="text-red tnum">{fmtCurrency(items.reduce((s, e) => s + e.amount, 0))}</span>
+            </div>
+            {items.map(it => (
+              <div key={it.id} className="flex items-center justify-between pl-4 py-0.5 text-[11px]">
+                <span className="truncate flex-1 text-ink2">{it.description}</span>
+                <span className="text-mute tnum shrink-0 ml-2">{fmtCurrency(it.amount)}</span>
+              </div>
+            ))}
+          </div>);
+        })}
+      </div>
+    )}
+
+    <div className="border-t border-dashed border-line mt-2.5 pt-2 flex items-center justify-between">
+      <span className="font-bold text-sm uppercase">Tổng</span>
+      <span className="font-bold text-lg text-red tnum">{fmtCurrency(total)}</span>
+    </div>
+
+    {count > 0 && (
+      <button onClick={downloadInvoice}
+        className="w-full mt-3 flex items-center justify-center gap-1.5 py-2.5 bg-ink hover:bg-accent text-bg rounded-lg text-xs font-bold transition-colors active:scale-[0.98]">
+        <Ic d={P.dl} size={14} /> Tải hóa đơn (PNG)
+      </button>
+    )}
   </Wrap>);
 }
 
