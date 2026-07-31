@@ -62,6 +62,7 @@ export interface Habit {
   id: string;
   name: string;
   emoji: string;
+  description: string | null;
   createdAt: string;
 }
 
@@ -175,9 +176,9 @@ export function deleteLiveTrack(id: string) { save("t_live", load<LiveTrack>("t_
 
 // ═══ HABITS (NEW — key: t_habits, t_habit_checks) ═══
 export function getHabits(): Habit[] { return load<Habit>("t_habits"); }
-export function addHabit(name: string, emoji: string): Habit {
+export function addHabit(name: string, emoji: string, description?: string | null): Habit {
   const all = load<Habit>("t_habits");
-  const n: Habit = { id: uid(), name, emoji, createdAt: new Date().toISOString() };
+  const n: Habit = { id: uid(), name, emoji, description: description || null, createdAt: new Date().toISOString() };
   all.push(n); save("t_habits", all); return n;
 }
 export function deleteHabit(id: string) {

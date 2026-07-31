@@ -332,11 +332,15 @@ export default function App() {
                   {habits.map(h => {
                     const ck = habitChecks.some(c => c.habitId === h.id);
                     const hs = S.getHabitStreak(h.id);
-                    return (<div key={h.id} className="flex items-center gap-2 py-0.5 group">
-                      <button onClick={() => { S.toggleHabitCheck(h.id, date); reload(); }} className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 ${ck ? "bg-green border-green text-bg" : "border-line hover:border-ink"}`}>{ck && <Ic d={P.check} size={12} sw={3} />}</button>
-                      <span className="text-xs">{h.emoji}</span><span className={`text-[12px] font-medium flex-1 ${ck ? "line-through text-mute" : ""}`}>{h.name}</span>
-                      {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum">{hs}🔥</span>}
-                      <button onClick={() => { if (confirm("Xóa?")) { S.deleteHabit(h.id); reload(); } }} className="text-mute2 hover:text-red opacity-0 group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={11} /></button>
+                    return (<div key={h.id} className="flex items-start gap-2 py-1 group">
+                      <button onClick={() => { S.toggleHabitCheck(h.id, date); reload(); }} className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${ck ? "bg-green border-green text-bg" : "border-line hover:border-ink"}`}>{ck && <Ic d={P.check} size={12} sw={3} />}</button>
+                      <span className="text-xs mt-0.5">{h.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className={`text-[12px] font-medium ${ck ? "line-through text-mute" : ""}`}>{h.name}</span>
+                        {h.description && <div className="text-[10px] text-mute mt-0.5 leading-tight">{h.description}</div>}
+                      </div>
+                      {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum shrink-0 mt-0.5">{hs}🔥</span>}
+                      <button onClick={() => { if (confirm("Xóa?")) { S.deleteHabit(h.id); reload(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5"><Ic d={P.x} size={11} /></button>
                     </div>);
                   })}
                 </div>
@@ -352,7 +356,7 @@ export default function App() {
                   <span className="text-[12px] font-medium flex-1 truncate">{a.title}</span>
                   {a.startTime && <span className="text-[10px] text-mute tnum shrink-0">{a.startTime}{a.endTime ? `–${a.endTime}` : ""}</span>}
                   {a.durationMinutes != null && a.durationMinutes > 0 && <span className="text-[10px] bg-blue2 text-blue px-1 py-0.5 rounded font-semibold tnum border border-blue/20 shrink-0">{fmtDur(a.durationMinutes)}</span>}
-                  <button onClick={() => del("a", a.id)} className="text-mute2 hover:text-red opacity-0 group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
+                  <button onClick={() => del("a", a.id)} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
                 </div>
               ))}
             </Sec>
@@ -735,8 +739,39 @@ async function compressImage(file: File): Promise<string> {
 
 function ImgP({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
   const [busy, setBusy] = useState(false);
-  if (value) return (<div className="relative mb-2.5"><img src={value} alt="" className="w-full h-28 object-cover rounded-lg border border-line" /><button type="button" onClick={() => onChange(null)} className="absolute top-1 right-1 w-6 h-6 bg-bg/80 hover:bg-red text-ink rounded-full flex items-center justify-center transition-colors"><Ic d={P.x} size={11} /></button></div>);
-  return (<label className="mb-2.5 py-2.5 border border-dashed border-line rounded-lg text-center text-xs text-mute cursor-pointer hover:border-ink hover:text-ink flex items-center justify-center gap-1.5 font-medium">{busy ? "Đang xử lý ảnh..." : <><Ic d={P.cam} size={14} /> Chụp ảnh</>}<input type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; setBusy(true); try { const compressed = await compressImage(f); onChange(compressed); } catch { alert("Không đọc được ảnh"); } finally { setBusy(false); e.currentTarget.value = ""; } }} /></label>);
+  const camRef = useRef<HTMLInputElement>(null);
+  const galRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setBusy(true);
+    try { onChange(await compressImage(f)); }
+    catch { alert("Không đọc được ảnh"); }
+    finally { setBusy(false); e.currentTarget.value = ""; }
+  };
+
+  if (value) return (
+    <div className="relative mb-2.5">
+      <img src={value} alt="" className="w-full h-28 object-cover rounded-lg border border-line" />
+      <button type="button" onClick={() => onChange(null)} className="absolute top-1 right-1 w-6 h-6 bg-bg/80 hover:bg-red text-ink rounded-full flex items-center justify-center transition-colors"><Ic d={P.x} size={11} /></button>
+    </div>
+  );
+
+  return (
+    <div className="flex gap-1.5 mb-2.5">
+      <input ref={camRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
+      <input ref={galRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      <button type="button" onClick={() => camRef.current?.click()}
+        className="flex-1 py-2.5 border border-dashed border-line rounded-lg text-xs text-mute hover:border-ink hover:text-ink flex items-center justify-center gap-1.5 font-medium transition-colors">
+        {busy ? "..." : <><Ic d={P.cam} size={14} /> Chụp ảnh</>}
+      </button>
+      <button type="button" onClick={() => galRef.current?.click()}
+        className="flex-1 py-2.5 border border-dashed border-line rounded-lg text-xs text-mute hover:border-ink hover:text-ink flex items-center justify-center gap-1.5 font-medium transition-colors">
+        {busy ? "..." : <><Ic d={P.dl} size={14} /> Chọn ảnh</>}
+      </button>
+    </div>
+  );
 }
 
 function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
@@ -793,11 +828,14 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
 }
 
 function AddHabitModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
-  const [name, setName] = useState(""); const [emoji, setEmoji] = useState("✅");
-  return (<Wrap title="Thói quen" onClose={onClose}>
-    <div className="flex gap-1.5 mb-2.5 flex-wrap">{["✅","📖","🏃","💊","🧘","💪","🚰","🎯","✍️","🛌"].map(e => (<button key={e} onClick={() => setEmoji(e)} className={`w-8 h-8 rounded-md flex items-center justify-center text-sm transition-all ${emoji === e ? "bg-ink text-bg scale-110" : "bg-bg2 border border-line"}`}>{e}</button>))}</div>
-    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên thói quen" autoFocus className={`${ic} mb-2.5`} />
-    <button onClick={() => { if (!name.trim()) return; S.addHabit(name.trim(), emoji); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
+  const [name, setName] = useState("");
+  const [emoji, setEmoji] = useState("✅");
+  const [desc, setDesc] = useState("");
+  return (<Wrap title="Thêm thói quen" onClose={onClose}>
+    <div className="flex gap-1.5 mb-2.5 flex-wrap">{["✅","📖","🏃","💊","🧘","💪","🚰","🎯","✍️","🛌","🧹","💤","🍎","🚫","💻"].map(e => (<button key={e} onClick={() => setEmoji(e)} className={`w-8 h-8 rounded-md flex items-center justify-center text-sm transition-all ${emoji === e ? "bg-ink text-bg scale-110" : "bg-bg2 border border-line"}`}>{e}</button>))}</div>
+    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên thói quen" autoFocus className={`${ic} mb-2`} />
+    <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Chi tiết (mục tiêu, cách thực hiện...)" className={`${ic} mb-2.5`} />
+    <button onClick={() => { if (!name.trim()) return; S.addHabit(name.trim(), emoji, desc.trim() || null); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
   </Wrap>);
 }
 
