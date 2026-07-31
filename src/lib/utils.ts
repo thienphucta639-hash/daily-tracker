@@ -49,8 +49,14 @@ export function fmtDateDisp(s: string): string {
   if (s === today) return "Hôm nay";
   const y = new Date(); y.setDate(y.getDate() - 1);
   if (s === formatDate(y)) return "Hôm qua";
-  const days = ["CN","T2","T3","T4","T5","T6","T7"];
-  return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth()+1}`;
+  const days = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+  return `${days[d.getDay()]}, ${d.getDate()}/${d.getMonth() + 1}`;
+}
+
+export function fmtDateFull(s: string): string {
+  const d = new Date(s + "T00:00:00");
+  const days = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+  return `${days[d.getDay()]}, ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
 }
 
 export function fmtCurrency(n: number): string {
@@ -82,6 +88,19 @@ export function fmtElapsed(ms: number): string {
   const sec = s % 60;
   if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+// "27k" -> 27000, "27m" -> 27000000, "1,5m" -> 1500000, "250" -> 250
+export function parseMoney(raw: string): number | null {
+  let s = raw.trim().toLowerCase().replace(/[\sđ]/g, "").replace(/vnd/g, "");
+  if (!s) return null;
+  let mult = 1;
+  if (s.endsWith("k")) { mult = 1_000; s = s.slice(0, -1); }
+  else if (s.endsWith("m")) { mult = 1_000_000; s = s.slice(0, -1); }
+  s = s.replace(/\./g, "").replace(",", ".");
+  const n = parseFloat(s);
+  if (isNaN(n) || n < 0) return null;
+  return Math.round(n * mult);
 }
 
 export const MEALS = [

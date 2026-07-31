@@ -1,10 +1,71 @@
 @import "tailwindcss";
 
-html {
-  scroll-behavior: smooth;
+@theme {
+  --color-bg: #0a0a0a;
+  --color-bg2: #111111;
+  --color-card: #1a1a1a;
+  --color-card2: #222222;
+  --color-line: #2a2a2a;
+  --color-line2: #333333;
+  --color-ink: #f0f0f0;
+  --color-ink2: #d4d4d4;
+  --color-mute: #888888;
+  --color-mute2: #666666;
+  --color-accent: #e2e2e2;
+  --color-glow: #ffffff;
+  --color-red: #ff4757;
+  --color-red2: #2a1215;
+  --color-green: #2ed573;
+  --color-green2: #0f2a18;
+  --color-gold: #ffa502;
+  --color-gold2: #2a1f0a;
+  --color-blue: #3498ff;
+  --color-blue2: #0f1a2a;
 }
 
+*, *::before, *::after { -webkit-tap-highlight-color: transparent; }
+
+html { scroll-behavior: smooth; }
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  -webkit-tap-highlight-color: transparent;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--ff);
+  overscroll-behavior: none;
 }
+
+input, textarea, select {
+  font-family: inherit;
+  color: inherit;
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* gradient bg animation */
+@keyframes gradShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.grad-move {
+  background-size: 200% 200%;
+  animation: gradShift 8s ease infinite;
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pop { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+@keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(2); opacity: 0; } }
+@keyframes bar-grow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+
+.a-rise { animation: rise 0.3s cubic-bezier(0.22, 0.9, 0.36, 1) both; }
+.a-pop { animation: pop 0.2s ease-out both; }
+.a-blink { animation: blink 1.6s ease-in-out infinite; }
+.a-bar { animation: bar-grow 0.5s cubic-bezier(0.22, 0.9, 0.36, 1) both; transform-origin: bottom; }
