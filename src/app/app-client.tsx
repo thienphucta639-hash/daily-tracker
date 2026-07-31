@@ -469,7 +469,29 @@ export default function App() {
             { d: P.clock, l: "Focus", m: "pomo" },
             { d: P.calendar, l: "Sử", m: "hist" },
           ].map(b => (
-            <button key={b.m} onClick={() => setModal(b.m === "pomo" ? null : b.m)} className="flex flex-col items-center gap-0.5 px-3 py-1 text-mute hover:text-ink active:scale-90 transition-all">
+            <button
+              key={b.m}
+              onClick={() => {
+                if (b.m === "pomo") {
+                  setModal(null);
+                  if (timerRunning) {
+                    // Already running — keep visible at top
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                    return;
+                  }
+                  setTimerSetting(true);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                } else {
+                  setTimerSetting(false);
+                  setModal(b.m);
+                }
+              }}
+              className={`flex flex-col items-center gap-0.5 px-3 py-1 active:scale-90 transition-all ${
+                (b.m === "pomo" && (timerRunning || timerSetting)) || modal === b.m
+                  ? "text-ink"
+                  : "text-mute hover:text-ink"
+              }`}
+            >
               <Ic d={b.d} size={19} /><span className="text-[9px] font-semibold">{b.l}</span>
             </button>
           ))}
@@ -559,52 +581,101 @@ function DayNote({ status, date, onSave }: { status: S.DailyStatus | null; date:
   </div>);
 }
 
-/* ═══ MODALS — iOS keyboard-safe using visualViewport ═══ */
+/* ═══ MODALS — iOS keyboard-safe: pin to visual viewport ═══ */
 function Wrap({ children, title, onClose }: { children: ReactNode; title: string; onClose: () => void }) {
+  const overlayRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const vv = typeof window !== "undefined" ? window.visualViewport : null;
-    if (!vv || !boxRef.current) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
 
-    const update = () => {
+    const sync = () => {
+      const overlay = overlayRef.current;
       const box = boxRef.current;
-      if (!box) return;
-      // on iOS when keyboard opens, visualViewport.height shrinks
-      const kbHeight = window.innerHeight - vv.height;
-      if (kbHeight > 50) {
-        // keyboard is open — shrink modal and push up
-        box.style.maxHeight = `${vv.height - 16}px`;
-        box.style.transform = `translateY(${-kbHeight}px)`;
-      } else {
-        box.style.maxHeight = "";
-        box.style.transform = "";
-      }
+      if (!overlay || !box) return;
+
+      // Pin overlay to the visible viewport (above keyboard)
+      const top = vv.offsetTop;
+      const height = vv.height;
+      overlay.style.top = `${top}px`;
+      overlay.style.height = `${height}px`;
+      overlay.style.bottom = "auto";
+
+      // Keep modal within visible area with breathing room
+      box.style.maxHeight = `${Math.max(220, height - 24)}px`;
     };
 
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
+    sync();
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    window.addEventListener("resize", sync);
     return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", sync);
     };
   }, []);
 
-  return (<div className="fixed inset-0 bg-bg/80 backdrop-blur-sm z-50 flex flex-col justify-end sm:justify-center sm:items-center" onClick={onClose}>
-    <div ref={boxRef} onClick={e => e.stopPropagation()}
-      className="bg-card w-full sm:max-w-md sm:rounded-xl rounded-t-xl p-3.5 a-rise border border-line flex flex-col transition-transform duration-200"
-      style={{ maxHeight: "85dvh" }}>
-      <div className="flex items-center justify-between mb-2.5 shrink-0">
-        <h2 className="font-bold text-sm">{title}</h2>
-        <button onClick={onClose} className="w-7 h-7 rounded-md bg-bg2 hover:bg-red/15 hover:text-red flex items-center justify-center text-mute transition-colors"><Ic d={P.x} size={13} /></button>
+  const focusInput = (el: HTMLElement) => {
+    // Wait for keyboard animation, then keep input visible without manual swipe
+    const run = () => {
+      const body = bodyRef.current;
+      if (!body) return;
+      const bodyRect = body.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const pad = 24;
+      if (elRect.bottom > bodyRect.bottom - pad) {
+        body.scrollTop += elRect.bottom - bodyRect.bottom + pad + 48;
+      } else if (elRect.top < bodyRect.top + pad) {
+        body.scrollTop -= bodyRect.top - elRect.top + pad;
+      }
+      // Also nudge browser scroll into the visual viewport
+      el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    };
+    requestAnimationFrame(() => {
+      setTimeout(run, 80);
+      setTimeout(run, 280);
+      setTimeout(run, 480);
+    });
+  };
+
+  return (
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 bg-bg/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+      onClick={onClose}
+    >
+      <div
+        ref={boxRef}
+        onClick={e => e.stopPropagation()}
+        className="bg-card w-full sm:max-w-md sm:rounded-xl rounded-t-xl p-3.5 a-rise border border-line flex flex-col"
+        style={{ maxHeight: "85dvh" }}
+      >
+        <div className="flex items-center justify-between mb-2.5 shrink-0">
+          <h2 className="font-bold text-sm">{title}</h2>
+          <button onClick={onClose} className="w-7 h-7 rounded-md bg-bg2 hover:bg-red/15 hover:text-red flex items-center justify-center text-mute transition-colors">
+            <Ic d={P.x} size={13} />
+          </button>
+        </div>
+        <div
+          ref={bodyRef}
+          className="flex-1 overflow-y-auto overscroll-contain pb-4"
+          onFocusCapture={e => {
+            const t = e.target as HTMLElement;
+            if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") {
+              focusInput(t);
+            }
+          }}
+        >
+          {children}
+          {/* Extra space so last field/button stays above keyboard */}
+          <div className="h-24" aria-hidden />
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto overscroll-contain" onFocus={e => {
-        const t = e.target as HTMLElement;
-        if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") {
-          setTimeout(() => t.scrollIntoView({ behavior: "smooth", block: "nearest" }), 350);
-        }
-      }}>{children}</div>
-    </div></div>);
+    </div>
+  );
 }
 const ic = "w-full px-3 py-2 rounded-md bg-bg2 border border-line outline-none focus:border-ink text-sm transition-colors";
 
@@ -671,27 +742,67 @@ function QNModal({ date, onDone, onClose }: { date: string; onDone: () => void; 
   </Wrap>);
 }
 
-function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expense[]; onClose: () => void }) {
-  const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
-  const [fromDate, setFromDate] = useState(date);
-  const [toDate, setToDate] = useState(date);
+function daysBetween(a: string, b: string): number {
+  const da = new Date(a + "T00:00:00").getTime();
+  const db = new Date(b + "T00:00:00").getTime();
+  return Math.round((db - da) / 86400000) + 1;
+}
 
-  // Gather expenses based on range
-  let allExps = dayExps;
-  let rangeLabel = fmtDateFull(date);
-  if (range === "week") {
-    const d = new Date(); const from = new Date(d); from.setDate(d.getDate() - 6);
-    const f = formatDate(from); const t = formatDate(d);
-    allExps = S.getExpenses().filter(e => e.date >= f && e.date <= t);
-    rangeLabel = `${fmtDateDisp(f)} → ${fmtDateDisp(t)}`;
+function addDaysStr(base: string, days: number): string {
+  const d = new Date(base + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return formatDate(d);
+}
+
+function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expense[]; onClose: () => void }) {
+  // Today is the START (first day). Ranges go FORWARD only.
+  const today = formatDate(new Date());
+  const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
+  const [customDays, setCustomDays] = useState(3); // 2..6 inclusive
+
+  // How many tracked days from today forward exist in data?
+  const allDates = Array.from(new Set(S.getExpenses().map(e => e.date).concat([today]))).sort();
+  const maxTracked = allDates.length ? allDates[allDates.length - 1] : today;
+  const daysAhead = Math.max(1, daysBetween(today, maxTracked));
+
+  const canWeek = daysAhead >= 7;
+  const canMonth = daysAhead >= 28; // require ~full month of forward data
+
+  // Effective range
+  let from = today;
+  let to = today;
+  let rangeLabel = fmtDateFull(today);
+  let blockedMsg = "";
+
+  if (range === "day") {
+    from = date; to = date;
+    rangeLabel = fmtDateFull(date);
+  } else if (range === "week") {
+    if (!canWeek) {
+      blockedMsg = "Chưa đủ 7 ngày từ hôm nay để xuất tuần. Hãy chọn Tùy chọn (2–6 ngày).";
+    } else {
+      to = addDaysStr(today, 6);
+      rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`;
+    }
   } else if (range === "month") {
-    const d = new Date(); const f = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-    allExps = S.getExpenses().filter(e => e.date >= f && e.date <= formatDate(d));
-    rangeLabel = `Tháng ${d.getMonth() + 1}/${d.getFullYear()}`;
-  } else if (range === "custom") {
-    allExps = S.getExpenses().filter(e => e.date >= fromDate && e.date <= toDate);
-    rangeLabel = `${fmtDateDisp(fromDate)} → ${fmtDateDisp(toDate)}`;
+    if (!canMonth) {
+      blockedMsg = "Chưa đủ 1 tháng từ hôm nay để xuất tháng. Hãy chọn Tùy chọn (2–6 ngày).";
+    } else {
+      to = addDaysStr(today, 29);
+      rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`;
+    }
+  } else {
+    // custom: 2..6 days starting today
+    const n = Math.min(6, Math.max(2, customDays));
+    to = addDaysStr(today, n - 1);
+    rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)} · ${n} ngày`;
   }
+
+  const allExps = blockedMsg
+    ? []
+    : range === "day"
+      ? dayExps
+      : S.getExpenses().filter(e => e.date >= from && e.date <= to);
 
   const total = allExps.reduce((s, e) => s + e.amount, 0);
   const grouped: Record<string, S.Expense[]> = {};
@@ -769,31 +880,60 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
     final.getContext("2d")!.drawImage(c, 0, 0);
 
     const a = document.createElement("a");
-    a.download = `hoa-don-${range === "day" ? date : range}.png`;
+    a.download = `hoa-don-${from}_to_${to}.png`;
     a.href = final.toDataURL("image/png");
     a.click();
   };
 
   return (<Wrap title="Xuất hóa đơn" onClose={onClose}>
-    {/* Range selector */}
+    {/* Range selector — today is start, only forward */}
     <div className="flex gap-1 mb-2.5">
-      {([["day", "Ngày"], ["week", "7 ngày"], ["month", "Tháng"], ["custom", "Tùy chọn"]] as const).map(([v, l]) => (
-        <button key={v} onClick={() => setRange(v)}
-          className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${range === v ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{l}</button>
+      {([
+        ["day", "Ngày"],
+        ["week", canWeek ? "7 ngày" : "7 ngày 🔒"],
+        ["month", canMonth ? "Tháng" : "Tháng 🔒"],
+        ["custom", "2–6 ngày"],
+      ] as const).map(([v, l]) => (
+        <button
+          key={v}
+          onClick={() => {
+            if (v === "week" && !canWeek) return;
+            if (v === "month" && !canMonth) return;
+            setRange(v);
+          }}
+          className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${
+            range === v ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"
+          } ${(v === "week" && !canWeek) || (v === "month" && !canMonth) ? "opacity-40" : ""}`}
+        >{l}</button>
       ))}
     </div>
+
     {range === "custom" && (
-      <div className="flex gap-2 mb-2.5">
-        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none" />
-        <span className="text-mute self-center text-xs">→</span>
-        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none" />
+      <div className="mb-2.5">
+        <div className="text-[10px] text-mute mb-1">Từ hôm nay · chọn 2 đến 6 ngày</div>
+        <div className="flex gap-1">
+          {[2, 3, 4, 5, 6].map(n => (
+            <button key={n} onClick={() => setCustomDays(n)}
+              className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${customDays === n ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{n} ngày</button>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {blockedMsg && (
+      <div className="mb-2.5 rounded-md border border-gold/30 bg-gold2 px-2.5 py-2 text-[11px] text-gold font-medium">
+        {blockedMsg}
       </div>
     )}
 
     {/* Preview */}
-    <div className="text-center mb-2"><div className="text-[10px] text-mute">{rangeLabel}</div><div className="font-bold text-xl text-red tnum mt-0.5">{fmtCurrency(total)}</div><div className="text-[10px] text-mute">{count} khoản</div></div>
+    <div className="text-center mb-2">
+      <div className="text-[10px] text-mute">{rangeLabel}</div>
+      <div className="font-bold text-xl text-red tnum mt-0.5">{fmtCurrency(total)}</div>
+      <div className="text-[10px] text-mute">{count} khoản</div>
+    </div>
 
-    {count === 0 ? <p className="text-center text-mute text-xs py-4">Không có chi tiêu trong khoảng này</p> : (
+    {blockedMsg ? <p className="text-center text-mute text-xs py-3">Chưa thể xuất khoảng này</p> : count === 0 ? <p className="text-center text-mute text-xs py-4">Không có chi tiêu trong khoảng này</p> : (
       <div className="space-y-1.5 max-h-[30vh] overflow-y-auto">
         {Object.entries(grouped).map(([cat, items]) => {
           const ec = EXPS.find(x => x.value === cat);
