@@ -543,20 +543,49 @@ function DayNote({ status, date, onSave }: { status: S.DailyStatus | null; date:
   </div>);
 }
 
-/* ═══ MODALS — keyboard-safe: content scrolls, input auto-scrolls into view ═══ */
+/* ═══ MODALS — iOS keyboard-safe using visualViewport ═══ */
 function Wrap({ children, title, onClose }: { children: ReactNode; title: string; onClose: () => void }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv || !boxRef.current) return;
+
+    const update = () => {
+      const box = boxRef.current;
+      if (!box) return;
+      // on iOS when keyboard opens, visualViewport.height shrinks
+      const kbHeight = window.innerHeight - vv.height;
+      if (kbHeight > 50) {
+        // keyboard is open — shrink modal and push up
+        box.style.maxHeight = `${vv.height - 16}px`;
+        box.style.transform = `translateY(${-kbHeight}px)`;
+      } else {
+        box.style.maxHeight = "";
+        box.style.transform = "";
+      }
+    };
+
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
   return (<div className="fixed inset-0 bg-bg/80 backdrop-blur-sm z-50 flex flex-col justify-end sm:justify-center sm:items-center" onClick={onClose}>
-    <div onClick={e => e.stopPropagation()}
-      className="bg-card w-full sm:max-w-md sm:rounded-xl rounded-t-xl p-3.5 a-rise border border-line sm:max-h-[85vh] max-h-[70vh] flex flex-col"
-      style={{ maxHeight: "calc(100dvh - env(keyboard-inset-height, 0px) - 20px)" }}>
+    <div ref={boxRef} onClick={e => e.stopPropagation()}
+      className="bg-card w-full sm:max-w-md sm:rounded-xl rounded-t-xl p-3.5 a-rise border border-line flex flex-col transition-transform duration-200"
+      style={{ maxHeight: "85dvh" }}>
       <div className="flex items-center justify-between mb-2.5 shrink-0">
         <h2 className="font-bold text-sm">{title}</h2>
         <button onClick={onClose} className="w-7 h-7 rounded-md bg-bg2 hover:bg-red/15 hover:text-red flex items-center justify-center text-mute transition-colors"><Ic d={P.x} size={13} /></button>
       </div>
-      <div className="flex-1 overflow-y-auto overscroll-contain [&_input]:scroll-mt-4" onFocus={e => {
+      <div className="flex-1 overflow-y-auto overscroll-contain" onFocus={e => {
         const t = e.target as HTMLElement;
         if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") {
-          setTimeout(() => t.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+          setTimeout(() => t.scrollIntoView({ behavior: "smooth", block: "nearest" }), 350);
         }
       }}>{children}</div>
     </div></div>);
