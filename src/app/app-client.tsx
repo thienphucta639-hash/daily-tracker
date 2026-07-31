@@ -79,6 +79,25 @@ export default function App() {
     tick(); const i = setInterval(tick, 1000); return () => clearInterval(i);
   }, [live]);
 
+  // Global iPhone keyboard fix: any focused input auto-scrolls into visible area
+  useEffect(() => {
+    const onFocusIn = (ev: FocusEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (!t) return;
+      const tag = t.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return;
+      const ensureVisible = () => {
+        t.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+        window.scrollBy({ top: -80, behavior: "smooth" });
+      };
+      setTimeout(ensureVisible, 120);
+      setTimeout(ensureVisible, 320);
+      setTimeout(ensureVisible, 520);
+    };
+    window.addEventListener("focusin", onFocusIn);
+    return () => window.removeEventListener("focusin", onFocusIn);
+  }, []);
+
   // Refs so rAF callback always sees latest values
   const timerLabelRef = useRef(timerLabel);
   timerLabelRef.current = timerLabel;
@@ -295,7 +314,7 @@ export default function App() {
                         <span className="text-xs">{gc(r.category)?.emoji}</span><span className="flex-1 truncate text-ink2">{r.title}</span>
                         <span className="text-[9px] text-mute tnum">{fmtTimeVN(r.startedAt)}</span>
                         {r.endedAt && <span className="text-[9px] bg-green2 text-green px-1 py-0.5 rounded font-semibold tnum">{fmtDur(Math.max(1, Math.round((new Date(r.endedAt).getTime() - new Date(r.startedAt).getTime()) / 60000)))}</span>}
-                        <button onClick={() => { S.deleteLiveTrack(r.id); reload(); }} className="text-mute2 hover:text-red opacity-0 group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={10} /></button>
+                        <button onClick={() => { S.deleteLiveTrack(r.id); reload(); }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={10} /></button>
                       </div>
                     ))}
                   </div>
@@ -351,7 +370,7 @@ export default function App() {
                       <span className="text-[9px] text-mute tnum shrink-0 mt-0.5">{n.time}</span>
                       {n.pinned && <span className="text-[9px] shrink-0">📌</span>}
                       <span className={`text-[12px] flex-1 ${n.pinned ? "font-medium" : ""}`}>{n.text}</span>
-                      <button onClick={() => { S.togglePinNote(n.id); reload(); }} className="text-mute2 hover:text-gold opacity-0 group-hover:opacity-100 transition-all shrink-0"><Ic d={P.pin} size={10} /></button>
+                      <button onClick={() => { S.togglePinNote(n.id); reload(); }} className="text-mute2 hover:text-gold opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.pin} size={10} /></button>
                       <button onClick={() => { S.deleteQuickNote(n.id); reload(); }} className="text-mute2 hover:text-red opacity-0 group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={10} /></button>
                     </div>
                   ))}
@@ -413,7 +432,7 @@ export default function App() {
                         {m.time && <span className="text-[10px] text-mute tnum shrink-0">{m.time}</span>}
                         {m.calories != null && m.calories > 0 && <span className="text-[10px] bg-gold2 text-gold px-1 py-0.5 rounded font-semibold tnum shrink-0">{m.calories}</span>}
                         {m.price != null && m.price > 0 && <span className="text-[10px] bg-red2 text-red px-1 py-0.5 rounded font-semibold tnum shrink-0">{fmtCurrency(m.price)}</span>}
-                        <button onClick={() => del("m", m.id)} className="text-mute2 hover:text-red opacity-0 group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
+                        <button onClick={() => del("m", m.id)} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
                       </div>))}
                     </div>);
                   })}
@@ -432,7 +451,7 @@ export default function App() {
                     : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0">{ge(e.category)?.emoji || "📦"}</span>}
                     <div className="flex-1 min-w-0"><div className="text-[12px] font-medium truncate">{e.description}</div><div className="text-[10px] text-mute">{fmtTimeVN(e.createdAt)} · {ge(e.category)?.label}</div></div>
                     <span className="font-bold text-[11px] text-red tnum shrink-0">−{fmtCurrency(e.amount)}</span>
-                    <button onClick={() => del("e", e.id)} className="mt-1 text-mute2 hover:text-red opacity-0 group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
+                    <button onClick={() => del("e", e.id)} className="mt-1 text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
                   </div>))}
                 </div>
               )}
@@ -684,9 +703,40 @@ function MoneyIn({ value, onChange, placeholder }: { value: string; onChange: (v
   return (<div><input type="text" inputMode="decimal" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} className={ic} />
     {value.trim() && <p className={`text-[10px] mt-0.5 text-right font-semibold ${p != null ? "text-green" : "text-red"}`}>{p != null ? `= ${fmtCurrency(p)}` : "Lỗi"}</p>}</div>);
 }
+
+async function compressImage(file: File): Promise<string> {
+  const raw = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = reject;
+    i.src = raw;
+  });
+
+  const max = 1280;
+  let w = img.width;
+  let h = img.height;
+  if (w > h && w > max) { h = Math.round((h * max) / w); w = max; }
+  else if (h > max) { w = Math.round((w * max) / h); h = max; }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return raw;
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL("image/jpeg", 0.72);
+}
+
 function ImgP({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const [busy, setBusy] = useState(false);
   if (value) return (<div className="relative mb-2.5"><img src={value} alt="" className="w-full h-28 object-cover rounded-lg border border-line" /><button type="button" onClick={() => onChange(null)} className="absolute top-1 right-1 w-6 h-6 bg-bg/80 hover:bg-red text-ink rounded-full flex items-center justify-center transition-colors"><Ic d={P.x} size={11} /></button></div>);
-  return (<label className="mb-2.5 py-2.5 border border-dashed border-line rounded-lg text-center text-xs text-mute cursor-pointer hover:border-ink hover:text-ink flex items-center justify-center gap-1.5 font-medium"><Ic d={P.cam} size={14} /> Chụp ảnh<input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => onChange(r.result as string); r.readAsDataURL(f); }} /></label>);
+  return (<label className="mb-2.5 py-2.5 border border-dashed border-line rounded-lg text-center text-xs text-mute cursor-pointer hover:border-ink hover:text-ink flex items-center justify-center gap-1.5 font-medium">{busy ? "Đang xử lý ảnh..." : <><Ic d={P.cam} size={14} /> Chụp ảnh</>}<input type="file" accept="image/*" capture="environment" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (!f) return; setBusy(true); try { const compressed = await compressImage(f); onChange(compressed); } catch { alert("Không đọc được ảnh"); } finally { setBusy(false); e.currentTarget.value = ""; } }} /></label>);
 }
 
 function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
@@ -699,7 +749,16 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
     <div className="flex gap-1.5 mb-2"><input type="time" value={tm} onChange={e => setTm(e.target.value)} className={`${ic} flex-1`} /><input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Cal" className={`${ic} flex-1`} /></div>
     <div className="mb-2"><MoneyIn value={price} onChange={setPrice} placeholder="Giá tiền" /></div>
     {pp != null && pp > 0 && <div className="flex items-center gap-1 bg-gold2 text-gold border border-gold/20 rounded-md px-2 py-1 text-[10px] font-medium mb-2.5 a-pop"><Ic d={P.wallet} size={11} /> Vào chi tiêu</div>}
-    <button onClick={() => { if (!fn.trim()) return; S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp }); if (pp != null && pp > 0) S.addExpense({ date, category: "food", description: fn.trim(), amount: pp, image: im }); onDone(); }} disabled={!fn.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold transition-colors disabled:opacity-30 active:scale-[0.98]">Thêm</button>
+    <button onClick={() => {
+      if (!fn.trim()) return;
+      try {
+        S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp });
+        if (pp != null && pp > 0) S.addExpense({ date, category: "food", description: fn.trim(), amount: pp, image: null });
+        onDone();
+      } catch {
+        alert("Không lưu được ảnh. Ảnh có thể quá nặng hoặc bộ nhớ trình duyệt đã đầy.");
+      }
+    }} disabled={!fn.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold transition-colors disabled:opacity-30 active:scale-[0.98]">Thêm</button>
   </Wrap>);
 }
 
@@ -721,7 +780,15 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
     <ImgP value={im} onChange={setIm} />
     <input type="text" value={ds} onChange={e => setDs(e.target.value)} placeholder="Mô tả" autoFocus className={`${ic} mb-2`} />
     <div className="mb-2.5"><MoneyIn value={am} onChange={setAm} placeholder="Số tiền" /></div>
-    <button onClick={() => { if (!ds.trim() || p == null || p <= 0) return; S.addExpense({ date, category: cat, description: ds.trim(), amount: p, image: im }); onDone(); }} disabled={!ds.trim() || p == null || p <= 0} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">{p != null && p > 0 ? `Thêm · ${fmtCurrency(p)}` : "Thêm"}</button>
+    <button onClick={() => {
+      if (!ds.trim() || p == null || p <= 0) return;
+      try {
+        S.addExpense({ date, category: cat, description: ds.trim(), amount: p, image: im });
+        onDone();
+      } catch {
+        alert("Không lưu được ảnh. Ảnh có thể quá nặng hoặc bộ nhớ trình duyệt đã đầy.");
+      }
+    }} disabled={!ds.trim() || p == null || p <= 0} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">{p != null && p > 0 ? `Thêm · ${fmtCurrency(p)}` : "Thêm"}</button>
   </Wrap>);
 }
 
