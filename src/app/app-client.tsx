@@ -887,207 +887,184 @@ function QNModal({ date, onDone, onClose }: { date: string; onDone: () => void; 
 }
 
 function addDaysStr(base: string, days: number): string {
-  const d = new Date(base + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return formatDate(d);
+  const d = new Date(base + "T00:00:00"); d.setDate(d.getDate() + days); return formatDate(d);
 }
 
 function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expense[]; onClose: () => void }) {
-  // date = ngày đang xem. Ranges bắt đầu từ ngày đang xem, đi tới.
   const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
   const [customFrom, setCustomFrom] = useState(date);
   const [customTo, setCustomTo] = useState(date);
 
-  // Check data availability from current date forward
-  const allExpDates = Array.from(new Set(S.getExpenses().map(e => e.date))).sort();
-  const lastDate = allExpDates.length ? allExpDates[allExpDates.length - 1] : date;
-  const daysFromView = Math.max(1, Math.round((new Date(lastDate + "T00:00:00").getTime() - new Date(date + "T00:00:00").getTime()) / 86400000) + 1);
-  const canWeek = daysFromView >= 7;
-  const canMonth = daysFromView >= 28;
+  // All dates that have ANY data (expenses or activities or meals)
+  const dataDates = new Set<string>();
+  S.getExpenses().forEach(e => dataDates.add(e.date));
+  S.getActivities().forEach(a => dataDates.add(a.date));
+  S.getMeals().forEach(m => dataDates.add(m.date));
+  const sortedDates = Array.from(dataDates).sort();
 
-  // Calculate effective from/to
-  let from = date;
-  let to = date;
-  let rangeLabel = fmtDateFull(date);
-  let blocked = "";
+  // For week/month: count data days from viewed date forward
+  const datesFromView = sortedDates.filter(d => d >= date);
+  const canWeek = datesFromView.length >= 7 || (datesFromView.length > 0 && Math.round((new Date(datesFromView[datesFromView.length - 1] + "T00:00:00").getTime() - new Date(date + "T00:00:00").getTime()) / 86400000) >= 6);
+  const canMonth = datesFromView.length > 0 && Math.round((new Date(datesFromView[datesFromView.length - 1] + "T00:00:00").getTime() - new Date(date + "T00:00:00").getTime()) / 86400000) >= 27;
+
+  let from = date, to = date, rangeLabel = fmtDateFull(date), blocked = "";
 
   if (range === "day") {
-    from = date; to = date;
-    rangeLabel = fmtDateFull(date);
+    from = date; to = date; rangeLabel = fmtDateFull(date);
   } else if (range === "week") {
-    if (!canWeek) {
-      blocked = `Chưa đủ 7 ngày dữ liệu từ ${fmtDateDisp(date)}. Dùng Tùy chọn để chọn khoảng ngày.`;
-    } else {
-      from = date; to = addDaysStr(date, 6);
-      rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`;
-    }
+    if (!canWeek) { blocked = `Chưa đủ 7 ngày dữ liệu từ ${fmtDateDisp(date)}.`; }
+    else { from = date; to = addDaysStr(date, 6); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; }
   } else if (range === "month") {
-    if (!canMonth) {
-      blocked = `Chưa đủ 1 tháng dữ liệu từ ${fmtDateDisp(date)}. Dùng Tùy chọn để chọn khoảng ngày.`;
-    } else {
-      from = date; to = addDaysStr(date, 29);
-      rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`;
-    }
+    if (!canMonth) { blocked = `Chưa đủ 1 tháng dữ liệu từ ${fmtDateDisp(date)}.`; }
+    else { from = date; to = addDaysStr(date, 29); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; }
   } else {
-    // Custom: user picks from/to freely
-    from = customFrom; to = customTo;
-    if (from > to) { from = to; } // swap if backwards
-    const nDays = Math.round((new Date(to + "T00:00:00").getTime() - new Date(from + "T00:00:00").getTime()) / 86400000) + 1;
-    rangeLabel = from === to ? fmtDateFull(from) : `${fmtDateDisp(from)} → ${fmtDateDisp(to)} · ${nDays} ngày`;
+    from = customFrom <= customTo ? customFrom : customTo;
+    to = customFrom <= customTo ? customTo : customFrom;
+    const n = Math.round((new Date(to + "T00:00:00").getTime() - new Date(from + "T00:00:00").getTime()) / 86400000) + 1;
+    rangeLabel = from === to ? fmtDateFull(from) : `${fmtDateDisp(from)} → ${fmtDateDisp(to)} · ${n} ngày`;
   }
 
-  const allExps = blocked
-    ? []
-    : range === "day"
-      ? dayExps
-      : S.getExpenses().filter(e => e.date >= from && e.date <= to);
-
+  const allExps = blocked ? [] : range === "day" ? dayExps : S.getExpenses().filter(e => e.date >= from && e.date <= to);
   const total = allExps.reduce((s, e) => s + e.amount, 0);
-  const grouped: Record<string, S.Expense[]> = {};
-  allExps.forEach(e => { (grouped[e.category] = grouped[e.category] || []).push(e); });
   const count = allExps.length;
 
+  // Group by DATE then by category inside each date
+  const byDate: Record<string, S.Expense[]> = {};
+  allExps.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
+  const dateKeys = Object.keys(byDate).sort();
+  const isMultiDay = dateKeys.length > 1;
+
+  // Render invoice to canvas — white background, proper receipt style
   const downloadInvoice = () => {
-    const W = 600; const pad = 40;
-    const c = document.createElement("canvas");
-    const ctx = c.getContext("2d")!;
-    c.width = W; c.height = 2000; // will crop later
-    ctx.fillStyle = "#0a0a0a"; ctx.fillRect(0, 0, W, 2000);
+    const W = 640, pad = 36, lineH = 22;
+    const cv = document.createElement("canvas");
+    const cx = cv.getContext("2d")!;
+    cv.width = W; cv.height = 4000;
+    // White background
+    cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, W, 4000);
 
-    let y = pad;
-    // Header bar
-    ctx.fillStyle = "#1a1a1a"; ctx.fillRect(0, 0, W, 80);
-    ctx.fillStyle = "#ffa502"; ctx.fillRect(0, 78, W, 3);
+    let y = 0;
+    // Top accent bar
+    cx.fillStyle = "#111111"; cx.fillRect(0, 0, W, 6);
+    y = 36;
 
-    ctx.font = "bold 22px 'Space Grotesk', sans-serif";
-    ctx.fillStyle = "#f0f0f0"; ctx.textAlign = "center";
-    ctx.fillText("JAY TRACKER — HÓA ĐƠN", W / 2, 35);
-    ctx.font = "13px 'Space Grotesk', sans-serif";
-    ctx.fillStyle = "#888888";
-    ctx.fillText(rangeLabel, W / 2, 58);
-    y = 100;
+    // Title
+    cx.font = "bold 24px sans-serif"; cx.fillStyle = "#111111"; cx.textAlign = "center";
+    cx.fillText("HÓA ĐƠN CHI TIÊU", W / 2, y); y += 22;
+    cx.font = "13px sans-serif"; cx.fillStyle = "#666666";
+    cx.fillText("Jay Tracker", W / 2, y); y += 20;
+    cx.fillText(rangeLabel, W / 2, y); y += 28;
 
-    // Items
-    ctx.textAlign = "left";
-    Object.entries(grouped).forEach(([cat, items]) => {
-      const ec = EXPS.find(x => x.value === cat);
-      const sub = items.reduce((s, e) => s + e.amount, 0);
-      // Category header
-      ctx.fillStyle = "#222222"; ctx.fillRect(pad - 10, y - 5, W - 2 * pad + 20, 28);
-      ctx.font = "bold 14px 'Space Grotesk', sans-serif";
-      ctx.fillStyle = "#f0f0f0"; ctx.fillText(`${ec?.emoji || ""} ${ec?.label || cat}`, pad, y + 14);
-      ctx.textAlign = "right"; ctx.fillStyle = "#ff4757";
-      ctx.fillText(fmtCurrency(sub), W - pad, y + 14);
-      ctx.textAlign = "left"; y += 35;
+    // Separator
+    cx.strokeStyle = "#dddddd"; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(pad, y); cx.lineTo(W - pad, y); cx.stroke(); y += 16;
+
+    cx.textAlign = "left";
+
+    // Per-day sections
+    dateKeys.forEach(dk => {
+      const items = byDate[dk];
+      const dayTotal = items.reduce((s, e) => s + e.amount, 0);
+
+      if (isMultiDay) {
+        // Date header
+        cx.fillStyle = "#f5f5f5"; cx.fillRect(pad - 4, y - 4, W - 2 * pad + 8, 24);
+        cx.font = "bold 13px sans-serif"; cx.fillStyle = "#111111";
+        cx.fillText(`📅 ${fmtDateDisp(dk)}`, pad + 4, y + 12);
+        cx.textAlign = "right"; cx.fillStyle = "#cc0000"; cx.font = "bold 13px sans-serif";
+        cx.fillText(fmtCurrency(dayTotal), W - pad - 4, y + 12);
+        cx.textAlign = "left"; y += 30;
+      }
+
       // Items
-      ctx.font = "13px 'Space Grotesk', sans-serif";
+      cx.font = "13px sans-serif";
       items.forEach(it => {
-        ctx.fillStyle = "#d4d4d4"; ctx.fillText(it.description, pad + 12, y);
-        ctx.textAlign = "right"; ctx.fillStyle = "#888888";
-        ctx.fillText(fmtCurrency(it.amount), W - pad, y);
-        ctx.textAlign = "left"; y += 22;
+        const ec = EXPS.find(x => x.value === it.category);
+        cx.fillStyle = "#333333";
+        cx.fillText(`${ec?.emoji || "•"} ${it.description}`, pad + (isMultiDay ? 12 : 0), y);
+        cx.textAlign = "right"; cx.fillStyle = "#888888";
+        cx.fillText(fmtCurrency(it.amount), W - pad, y);
+        cx.textAlign = "left"; y += lineH;
       });
       y += 8;
     });
 
-    // Divider
-    y += 5;
-    ctx.strokeStyle = "#333333"; ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
-    ctx.setLineDash([]); y += 25;
+    // Bottom separator
+    y += 4;
+    cx.setLineDash([5, 3]); cx.strokeStyle = "#cccccc";
+    cx.beginPath(); cx.moveTo(pad, y); cx.lineTo(W - pad, y); cx.stroke();
+    cx.setLineDash([]); y += 20;
 
-    // Total
-    ctx.font = "bold 18px 'Space Grotesk', sans-serif";
-    ctx.fillStyle = "#f0f0f0"; ctx.fillText("TỔNG CỘNG", pad, y);
-    ctx.textAlign = "right"; ctx.fillStyle = "#ff4757";
-    ctx.font = "bold 24px 'Space Grotesk', sans-serif";
-    ctx.fillText(fmtCurrency(total), W - pad, y);
-    y += 15;
+    // TOTAL
+    cx.font = "bold 16px sans-serif"; cx.fillStyle = "#111111";
+    cx.fillText("TỔNG CỘNG", pad, y);
+    cx.textAlign = "right"; cx.fillStyle = "#cc0000";
+    cx.font = "bold 22px sans-serif";
+    cx.fillText(fmtCurrency(total), W - pad, y);
+    y += 30;
 
-    // Footer
-    y += 20;
-    ctx.fillStyle = "#333333"; ctx.fillRect(0, y, W, 1);
-    y += 15;
-    ctx.textAlign = "center"; ctx.font = "11px 'Space Grotesk', sans-serif"; ctx.fillStyle = "#666666";
-    ctx.fillText(`${count} khoản · Jay Tracker`, W / 2, y);
-    y += 25;
+    // Footer line
+    cx.fillStyle = "#eeeeee"; cx.fillRect(pad, y, W - 2 * pad, 1); y += 14;
+    cx.textAlign = "center"; cx.font = "11px sans-serif"; cx.fillStyle = "#aaaaaa";
+    cx.fillText(`${count} khoản chi · ${rangeLabel}`, W / 2, y); y += 14;
+    cx.fillText("Jay Tracker", W / 2, y); y += 6;
 
-    // Crop canvas
-    const final = document.createElement("canvas");
-    final.width = W; final.height = y;
-    final.getContext("2d")!.drawImage(c, 0, 0);
+    // Bottom bar
+    cx.fillStyle = "#111111"; cx.fillRect(0, y + 6, W, 6); y += 18;
 
+    // Crop
+    const out = document.createElement("canvas"); out.width = W; out.height = y;
+    out.getContext("2d")!.drawImage(cv, 0, 0);
     const a = document.createElement("a");
-    a.download = `hoa-don-${from}_to_${to}.png`;
-    a.href = final.toDataURL("image/png");
-    a.click();
+    a.download = `hoa-don-${from === to ? from : from + "-" + to}.png`;
+    a.href = out.toDataURL("image/png"); a.click();
   };
 
   return (<Wrap title="Xuất hóa đơn" onClose={onClose}>
-    {/* Range selector */}
     <div className="flex gap-1 mb-2.5">
-      {([
-        ["day", "Ngày"],
-        ["week", canWeek ? "7 ngày" : "7 ngày 🔒"],
-        ["month", canMonth ? "Tháng" : "Tháng 🔒"],
-        ["custom", "Tùy chọn"],
-      ] as const).map(([v, l]) => (
-        <button
-          key={v}
-          onClick={() => {
-            if (v === "week" && !canWeek) return;
-            if (v === "month" && !canMonth) return;
-            if (v === "custom") { setCustomFrom(date); setCustomTo(date); }
-            setRange(v);
-          }}
-          className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${
-            range === v ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"
-          } ${(v === "week" && !canWeek) || (v === "month" && !canMonth) ? "opacity-40" : ""}`}
-        >{l}</button>
+      {([["day", "Ngày"], ["week", canWeek ? "7 ngày" : "7 ngày 🔒"], ["month", canMonth ? "Tháng" : "Tháng 🔒"], ["custom", "Tùy chọn"]] as const).map(([v, l]) => (
+        <button key={v} onClick={() => { if (v === "week" && !canWeek) return; if (v === "month" && !canMonth) return; if (v === "custom") { setCustomFrom(date); setCustomTo(date); } setRange(v); }}
+          className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${range === v ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"} ${(v === "week" && !canWeek) || (v === "month" && !canMonth) ? "opacity-40" : ""}`}>{l}</button>
       ))}
     </div>
 
     {range === "custom" && (
       <div className="mb-2.5">
-        <div className="text-[10px] text-mute mb-1">Chọn ngày bắt đầu và kết thúc</div>
-        <div className="flex gap-2 items-center">
-          <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-            className="flex-1 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none focus:border-ink" />
-          <span className="text-mute text-xs">→</span>
-          <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-            className="flex-1 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none focus:border-ink" />
+        <div className="text-[10px] text-mute mb-1.5">Chọn ngày có dữ liệu:</div>
+        <div className="flex flex-wrap gap-1 mb-2 max-h-24 overflow-y-auto">
+          {sortedDates.map(d => {
+            const sel = d >= customFrom && d <= customTo;
+            return <button key={d} onClick={() => {
+              if (!customFrom || customFrom === customTo) { setCustomFrom(d); setCustomTo(d); }
+              else { if (d < customFrom) setCustomFrom(d); else setCustomTo(d); }
+            }} className={`px-2 py-1 rounded-md text-[10px] font-semibold tnum transition-all ${sel ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line hover:border-ink"}`}>
+              {new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
+            </button>;
+          })}
         </div>
+        {sortedDates.length === 0 && <div className="text-[10px] text-mute text-center py-2">Chưa có ngày nào có dữ liệu</div>}
       </div>
     )}
 
-    {blocked && (
-      <div className="mb-2.5 rounded-md border border-gold/30 bg-gold2 px-2.5 py-2 text-[11px] text-gold font-medium">
-        {blocked}
-      </div>
-    )}
+    {blocked && <div className="mb-2.5 rounded-md border border-gold/30 bg-gold2 px-2.5 py-2 text-[11px] text-gold font-medium">{blocked}</div>}
 
-    {/* Preview */}
     <div className="text-center mb-2">
       <div className="text-[10px] text-mute">{rangeLabel}</div>
       <div className="font-bold text-xl text-red tnum mt-0.5">{fmtCurrency(total)}</div>
       <div className="text-[10px] text-mute">{count} khoản</div>
     </div>
 
-    {blocked ? <p className="text-center text-mute text-xs py-3">Chưa thể xuất khoảng này</p> : count === 0 ? <p className="text-center text-mute text-xs py-4">Không có chi tiêu trong khoảng này</p> : (
-      <div className="space-y-1.5 max-h-[30vh] overflow-y-auto">
-        {Object.entries(grouped).map(([cat, items]) => {
-          const ec = EXPS.find(x => x.value === cat);
-          return (<div key={cat}>
-            <div className="flex items-center justify-between text-xs font-bold mb-0.5">
-              <span className="text-ink2">{ec?.emoji} {ec?.label}</span>
-              <span className="text-red tnum">{fmtCurrency(items.reduce((s, e) => s + e.amount, 0))}</span>
-            </div>
-            {items.map(it => (
-              <div key={it.id} className="flex items-center justify-between pl-4 py-0.5 text-[11px]">
-                <span className="truncate flex-1 text-ink2">{it.description}</span>
-                <span className="text-mute tnum shrink-0 ml-2">{fmtCurrency(it.amount)}</span>
-              </div>
-            ))}
+    {blocked ? <p className="text-center text-mute text-xs py-3">Chưa thể xuất</p> : count === 0 ? <p className="text-center text-mute text-xs py-4">Không có chi tiêu</p> : (
+      <div className="space-y-2 max-h-[30vh] overflow-y-auto">
+        {dateKeys.map(dk => {
+          const items = byDate[dk];
+          const dayTot = items.reduce((s, e) => s + e.amount, 0);
+          return (<div key={dk}>
+            {isMultiDay && <div className="flex items-center justify-between text-[11px] font-bold mb-0.5"><span>📅 {fmtDateDisp(dk)}</span><span className="text-red tnum">{fmtCurrency(dayTot)}</span></div>}
+            {items.map(it => {
+              const ec = EXPS.find(x => x.value === it.category);
+              return <div key={it.id} className="flex items-center justify-between pl-3 py-0.5 text-[11px]"><span className="truncate flex-1">{ec?.emoji} {it.description}</span><span className="text-mute tnum shrink-0 ml-2">{fmtCurrency(it.amount)}</span></div>;
+            })}
           </div>);
         })}
       </div>
@@ -1099,8 +1076,7 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
     </div>
 
     {count > 0 && (
-      <button onClick={downloadInvoice}
-        className="w-full mt-3 flex items-center justify-center gap-1.5 py-2.5 bg-ink hover:bg-accent text-bg rounded-lg text-xs font-bold transition-colors active:scale-[0.98]">
+      <button onClick={downloadInvoice} className="w-full mt-3 flex items-center justify-center gap-1.5 py-2.5 bg-ink hover:bg-accent text-bg rounded-lg text-xs font-bold transition-colors active:scale-[0.98]">
         <Ic d={P.dl} size={14} /> Tải hóa đơn (PNG)
       </button>
     )}
