@@ -886,12 +886,6 @@ function QNModal({ date, onDone, onClose }: { date: string; onDone: () => void; 
   </Wrap>);
 }
 
-function daysBetween(a: string, b: string): number {
-  const da = new Date(a + "T00:00:00").getTime();
-  const db = new Date(b + "T00:00:00").getTime();
-  return Math.round((db - da) / 86400000) + 1;
-}
-
 function addDaysStr(base: string, days: number): string {
   const d = new Date(base + "T00:00:00");
   d.setDate(d.getDate() + days);
@@ -899,50 +893,50 @@ function addDaysStr(base: string, days: number): string {
 }
 
 function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expense[]; onClose: () => void }) {
-  // Today is the START (first day). Ranges go FORWARD only.
-  const today = formatDate(new Date());
+  // date = ngày đang xem. Ranges bắt đầu từ ngày đang xem, đi tới.
   const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
-  const [customDays, setCustomDays] = useState(3); // 2..6 inclusive
+  const [customFrom, setCustomFrom] = useState(date);
+  const [customTo, setCustomTo] = useState(date);
 
-  // How many tracked days from today forward exist in data?
-  const allDates = Array.from(new Set(S.getExpenses().map(e => e.date).concat([today]))).sort();
-  const maxTracked = allDates.length ? allDates[allDates.length - 1] : today;
-  const daysAhead = Math.max(1, daysBetween(today, maxTracked));
+  // Check data availability from current date forward
+  const allExpDates = Array.from(new Set(S.getExpenses().map(e => e.date))).sort();
+  const lastDate = allExpDates.length ? allExpDates[allExpDates.length - 1] : date;
+  const daysFromView = Math.max(1, Math.round((new Date(lastDate + "T00:00:00").getTime() - new Date(date + "T00:00:00").getTime()) / 86400000) + 1);
+  const canWeek = daysFromView >= 7;
+  const canMonth = daysFromView >= 28;
 
-  const canWeek = daysAhead >= 7;
-  const canMonth = daysAhead >= 28; // require ~full month of forward data
-
-  // Effective range
-  let from = today;
-  let to = today;
-  let rangeLabel = fmtDateFull(today);
-  let blockedMsg = "";
+  // Calculate effective from/to
+  let from = date;
+  let to = date;
+  let rangeLabel = fmtDateFull(date);
+  let blocked = "";
 
   if (range === "day") {
     from = date; to = date;
     rangeLabel = fmtDateFull(date);
   } else if (range === "week") {
     if (!canWeek) {
-      blockedMsg = "Chưa đủ 7 ngày từ hôm nay để xuất tuần. Hãy chọn Tùy chọn (2–6 ngày).";
+      blocked = `Chưa đủ 7 ngày dữ liệu từ ${fmtDateDisp(date)}. Dùng Tùy chọn để chọn khoảng ngày.`;
     } else {
-      to = addDaysStr(today, 6);
+      from = date; to = addDaysStr(date, 6);
       rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`;
     }
   } else if (range === "month") {
     if (!canMonth) {
-      blockedMsg = "Chưa đủ 1 tháng từ hôm nay để xuất tháng. Hãy chọn Tùy chọn (2–6 ngày).";
+      blocked = `Chưa đủ 1 tháng dữ liệu từ ${fmtDateDisp(date)}. Dùng Tùy chọn để chọn khoảng ngày.`;
     } else {
-      to = addDaysStr(today, 29);
+      from = date; to = addDaysStr(date, 29);
       rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`;
     }
   } else {
-    // custom: 2..6 days starting today
-    const n = Math.min(6, Math.max(2, customDays));
-    to = addDaysStr(today, n - 1);
-    rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)} · ${n} ngày`;
+    // Custom: user picks from/to freely
+    from = customFrom; to = customTo;
+    if (from > to) { from = to; } // swap if backwards
+    const nDays = Math.round((new Date(to + "T00:00:00").getTime() - new Date(from + "T00:00:00").getTime()) / 86400000) + 1;
+    rangeLabel = from === to ? fmtDateFull(from) : `${fmtDateDisp(from)} → ${fmtDateDisp(to)} · ${nDays} ngày`;
   }
 
-  const allExps = blockedMsg
+  const allExps = blocked
     ? []
     : range === "day"
       ? dayExps
@@ -1030,19 +1024,20 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
   };
 
   return (<Wrap title="Xuất hóa đơn" onClose={onClose}>
-    {/* Range selector — today is start, only forward */}
+    {/* Range selector */}
     <div className="flex gap-1 mb-2.5">
       {([
         ["day", "Ngày"],
         ["week", canWeek ? "7 ngày" : "7 ngày 🔒"],
         ["month", canMonth ? "Tháng" : "Tháng 🔒"],
-        ["custom", "2–6 ngày"],
+        ["custom", "Tùy chọn"],
       ] as const).map(([v, l]) => (
         <button
           key={v}
           onClick={() => {
             if (v === "week" && !canWeek) return;
             if (v === "month" && !canMonth) return;
+            if (v === "custom") { setCustomFrom(date); setCustomTo(date); }
             setRange(v);
           }}
           className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${
@@ -1054,19 +1049,20 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
 
     {range === "custom" && (
       <div className="mb-2.5">
-        <div className="text-[10px] text-mute mb-1">Từ hôm nay · chọn 2 đến 6 ngày</div>
-        <div className="flex gap-1">
-          {[2, 3, 4, 5, 6].map(n => (
-            <button key={n} onClick={() => setCustomDays(n)}
-              className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${customDays === n ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{n} ngày</button>
-          ))}
+        <div className="text-[10px] text-mute mb-1">Chọn ngày bắt đầu và kết thúc</div>
+        <div className="flex gap-2 items-center">
+          <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+            className="flex-1 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none focus:border-ink" />
+          <span className="text-mute text-xs">→</span>
+          <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+            className="flex-1 px-2 py-1.5 rounded-md bg-bg2 border border-line text-xs outline-none focus:border-ink" />
         </div>
       </div>
     )}
 
-    {blockedMsg && (
+    {blocked && (
       <div className="mb-2.5 rounded-md border border-gold/30 bg-gold2 px-2.5 py-2 text-[11px] text-gold font-medium">
-        {blockedMsg}
+        {blocked}
       </div>
     )}
 
@@ -1077,7 +1073,7 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
       <div className="text-[10px] text-mute">{count} khoản</div>
     </div>
 
-    {blockedMsg ? <p className="text-center text-mute text-xs py-3">Chưa thể xuất khoảng này</p> : count === 0 ? <p className="text-center text-mute text-xs py-4">Không có chi tiêu trong khoảng này</p> : (
+    {blocked ? <p className="text-center text-mute text-xs py-3">Chưa thể xuất khoảng này</p> : count === 0 ? <p className="text-center text-mute text-xs py-4">Không có chi tiêu trong khoảng này</p> : (
       <div className="space-y-1.5 max-h-[30vh] overflow-y-auto">
         {Object.entries(grouped).map(([cat, items]) => {
           const ec = EXPS.find(x => x.value === cat);
