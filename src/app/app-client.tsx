@@ -892,8 +892,9 @@ function addDaysStr(base: string, days: number): string {
 
 function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expense[]; onClose: () => void }) {
   const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
-  const [customFrom, setCustomFrom] = useState(date);
-  const [customTo, setCustomTo] = useState(date);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [pickSide, setPickSide] = useState<"from" | "to">("from");
 
   // All dates that have ANY data (expenses or activities or meals)
   const dataDates = new Set<string>();
@@ -918,10 +919,14 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
     if (!canMonth) { blocked = `Chưa đủ 1 tháng dữ liệu từ ${fmtDateDisp(date)}.`; }
     else { from = date; to = addDaysStr(date, 29); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; }
   } else {
-    from = customFrom <= customTo ? customFrom : customTo;
-    to = customFrom <= customTo ? customTo : customFrom;
-    const n = Math.round((new Date(to + "T00:00:00").getTime() - new Date(from + "T00:00:00").getTime()) / 86400000) + 1;
-    rangeLabel = from === to ? fmtDateFull(from) : `${fmtDateDisp(from)} → ${fmtDateDisp(to)} · ${n} ngày`;
+    if (!customFrom || !customTo) {
+      blocked = "Hãy chọn đủ ngày bắt đầu và ngày kết thúc.";
+    } else {
+      from = customFrom <= customTo ? customFrom : customTo;
+      to = customFrom <= customTo ? customTo : customFrom;
+      const n = Math.round((new Date(to + "T00:00:00").getTime() - new Date(from + "T00:00:00").getTime()) / 86400000) + 1;
+      rangeLabel = from === to ? fmtDateFull(from) : `${fmtDateDisp(from)} → ${fmtDateDisp(to)} · ${n} ngày`;
+    }
   }
 
   const allExps = blocked ? [] : range === "day" ? dayExps : S.getExpenses().filter(e => e.date >= from && e.date <= to);
@@ -950,16 +955,7 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
     cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, W, 8);
     y = 8;
 
-    // === RECEIPT BODY (white) ===
-    const bodyStart = y;
-    cx.fillStyle = "#ffffff";
-    // will fill later after we know height
-
-    // Store y for body fill
-    const drawBody = (endY: number) => {
-      cx.fillStyle = "#ffffff"; cx.fillRect(0, bodyStart, W, endY - bodyStart);
-    };
-
+    // receipt body starts below top edge
     y = 32;
 
     // Logo / Title area
@@ -1049,9 +1045,6 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
     cx.font = "bold 11px monospace"; cx.fillStyle = "#dddddd";
     cx.fillText("━━━━━━━━━━━━━━━━━━━━━━━━━━━", W / 2, y); y += 12;
 
-    // Draw white body background
-    drawBody(y);
-
     // Crop
     const out = document.createElement("canvas"); out.width = W; out.height = y;
     out.getContext("2d")!.drawImage(cv, 0, 0);
@@ -1076,15 +1069,24 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
 
     {range === "custom" && (
       <div className="mb-2.5">
-        <div className="text-[10px] text-mute mb-1.5">Chọn ngày có dữ liệu:</div>
-        <div className="flex flex-wrap gap-1 mb-2 max-h-24 overflow-y-auto">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <button onClick={() => setPickSide("from")} className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${pickSide === "from" ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>
+            Từ ngày {customFrom ? fmtDateDisp(customFrom) : "..."}
+          </button>
+          <button onClick={() => setPickSide("to")} className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${pickSide === "to" ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>
+            Đến ngày {customTo ? fmtDateDisp(customTo) : "..."}
+          </button>
+        </div>
+        <div className="text-[10px] text-mute mb-1.5">Chạm ngày có dữ liệu để gán cho “{pickSide === "from" ? "Từ ngày" : "Đến ngày"}”</div>
+        <div className="flex flex-wrap gap-1 mb-2 max-h-28 overflow-y-auto">
           {sortedDates.map(d => {
-            const sel = d >= customFrom && d <= customTo;
+            const inRange = customFrom && customTo && d >= (customFrom <= customTo ? customFrom : customTo) && d <= (customFrom <= customTo ? customTo : customFrom);
+            const isFrom = customFrom === d;
+            const isTo = customTo === d;
             return <button key={d} onClick={() => {
-              if (!customFrom || customFrom === customTo) { setCustomFrom(d); setCustomTo(d); }
-              else { if (d < customFrom) setCustomFrom(d); else setCustomTo(d); }
-            }} className={`px-2 py-1 rounded-md text-[10px] font-semibold tnum transition-all ${sel ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line hover:border-ink"}`}>
-              {new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
+              if (pickSide === "from") setCustomFrom(d); else setCustomTo(d);
+            }} className={`px-2 py-1 rounded-md text-[10px] font-semibold tnum transition-all ${inRange ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line hover:border-ink"}`}>
+              {isFrom && "Từ "}{isTo && !isFrom && "Đến "}{new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
             </button>;
           })}
         </div>
