@@ -892,242 +892,172 @@ function addDaysStr(base: string, days: number): string {
 
 function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expense[]; onClose: () => void }) {
   const [range, setRange] = useState<"day" | "week" | "month" | "custom">("day");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const [pickSide, setPickSide] = useState<"from" | "to">("from");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
-  // All dates that have ANY data (expenses or activities or meals)
   const dataDates = new Set<string>();
   S.getExpenses().forEach(e => dataDates.add(e.date));
   S.getActivities().forEach(a => dataDates.add(a.date));
   S.getMeals().forEach(m => dataDates.add(m.date));
   const sortedDates = Array.from(dataDates).sort();
 
-  // For week/month: count data days from viewed date forward
   const datesFromView = sortedDates.filter(d => d >= date);
   const canWeek = datesFromView.length >= 7 || (datesFromView.length > 0 && Math.round((new Date(datesFromView[datesFromView.length - 1] + "T00:00:00").getTime() - new Date(date + "T00:00:00").getTime()) / 86400000) >= 6);
   const canMonth = datesFromView.length > 0 && Math.round((new Date(datesFromView[datesFromView.length - 1] + "T00:00:00").getTime() - new Date(date + "T00:00:00").getTime()) / 86400000) >= 27;
 
   let from = date, to = date, rangeLabel = fmtDateFull(date), blocked = "";
 
-  if (range === "day") {
-    from = date; to = date; rangeLabel = fmtDateFull(date);
-  } else if (range === "week") {
-    if (!canWeek) { blocked = `Chưa đủ 7 ngày dữ liệu từ ${fmtDateDisp(date)}.`; }
-    else { from = date; to = addDaysStr(date, 6); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; }
-  } else if (range === "month") {
-    if (!canMonth) { blocked = `Chưa đủ 1 tháng dữ liệu từ ${fmtDateDisp(date)}.`; }
-    else { from = date; to = addDaysStr(date, 29); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; }
-  } else {
-    if (!customFrom || !customTo) {
-      blocked = "Hãy chọn đủ ngày bắt đầu và ngày kết thúc.";
-    } else {
-      from = customFrom <= customTo ? customFrom : customTo;
-      to = customFrom <= customTo ? customTo : customFrom;
-      const n = Math.round((new Date(to + "T00:00:00").getTime() - new Date(from + "T00:00:00").getTime()) / 86400000) + 1;
-      rangeLabel = from === to ? fmtDateFull(from) : `${fmtDateDisp(from)} → ${fmtDateDisp(to)} · ${n} ngày`;
-    }
-  }
+  if (range === "day") { from = date; to = date; rangeLabel = fmtDateFull(date); }
+  else if (range === "week") { if (!canWeek) blocked = "Chưa đủ 7 ngày dữ liệu."; else { from = date; to = addDaysStr(date, 6); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
+  else if (range === "month") { if (!canMonth) blocked = "Chưa đủ 1 tháng dữ liệu."; else { from = date; to = addDaysStr(date, 29); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
+  else { if (picked.size === 0) blocked = "Chọn ít nhất 1 ngày."; else { const arr = Array.from(picked).sort(); from = arr[0]; to = arr[arr.length - 1]; rangeLabel = arr.length === 1 ? fmtDateFull(from) : `${arr.length} ngày · ${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
 
-  const allExps = blocked ? [] : range === "day" ? dayExps : S.getExpenses().filter(e => e.date >= from && e.date <= to);
+  const allExps = blocked ? [] : range === "custom" ? S.getExpenses().filter(e => picked.has(e.date)) : range === "day" ? dayExps : S.getExpenses().filter(e => e.date >= from && e.date <= to);
   const total = allExps.reduce((s, e) => s + e.amount, 0);
   const count = allExps.length;
-
-  // Group by DATE then by category inside each date
   const byDate: Record<string, S.Expense[]> = {};
   allExps.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
   const dateKeys = Object.keys(byDate).sort();
   const isMultiDay = dateKeys.length > 1;
 
-  // Render receipt-style invoice
+  const toggleDate = (d: string) => { const n = new Set(picked); if (n.has(d)) n.delete(d); else n.add(d); setPicked(n); };
+
   const downloadInvoice = () => {
-    const W = 580, M = 32, LH = 24;
-    const cv = document.createElement("canvas");
-    const cx = cv.getContext("2d")!;
-    cv.width = W; cv.height = 5000;
+    const W = 640, M = 40, LH = 26;
+    const cv = document.createElement("canvas"); const cx = cv.getContext("2d")!;
+    cv.width = W; cv.height = 6000;
+    cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, W, 6000);
 
-    // Fill white
-    cx.fillStyle = "#fafafa"; cx.fillRect(0, 0, W, 5000);
+    let y = 20;
+    // Top accent
+    cx.fillStyle = "#1a1a1a"; cx.fillRect(0, 0, W, 5);
 
-    let y = 0;
+    // Header
+    cx.textAlign = "center";
+    cx.font = "bold 28px sans-serif"; cx.fillStyle = "#1a1a1a";
+    cx.fillText("JAY TRACKER", W / 2, y + 6); y += 30;
+    cx.font = "600 14px sans-serif"; cx.fillStyle = "#666666";
+    cx.fillText("HÓA ĐƠN CHI TIÊU", W / 2, y); y += 22;
+    cx.font = "13px sans-serif"; cx.fillStyle = "#888888";
+    cx.fillText(rangeLabel, W / 2, y); y += 24;
 
-    // === TOP RECEIPT EDGE (zigzag) ===
-    cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, W, 8);
-    y = 8;
+    // Thick line
+    cx.strokeStyle = "#1a1a1a"; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 14;
 
-    // receipt body starts below top edge
-    y = 32;
+    // Column headers
+    cx.textAlign = "left"; cx.font = "bold 10px sans-serif"; cx.fillStyle = "#aaaaaa";
+    cx.fillText("STT", M, y); cx.fillText("MÔ TẢ", M + 34, y);
+    cx.textAlign = "right"; cx.fillText("THÀNH TIỀN", W - M, y);
+    cx.textAlign = "left"; y += 4;
+    cx.strokeStyle = "#dddddd"; cx.lineWidth = 0.5;
+    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 10;
 
-    // Logo / Title area
-    cx.font = "bold 11px monospace"; cx.fillStyle = "#999999"; cx.textAlign = "center"; cx.letterSpacing = "4px";
-    cx.fillText("━━━━━━━━━━━━━━━━━━━━━━━━━━━", W / 2, y); y += 20;
-    cx.font = "bold 26px sans-serif"; cx.fillStyle = "#111111";
-    cx.fillText("JAY TRACKER", W / 2, y); y += 16;
-    cx.font = "12px sans-serif"; cx.fillStyle = "#999999";
-    cx.fillText("HÓA ĐƠN CHI TIÊU", W / 2, y); y += 20;
-    cx.font = "12px sans-serif"; cx.fillStyle = "#666666";
-    cx.fillText(rangeLabel, W / 2, y); y += 14;
-    cx.font = "bold 11px monospace"; cx.fillStyle = "#999999";
-    cx.fillText("━━━━━━━━━━━━━━━━━━━━━━━━━━━", W / 2, y); y += 18;
-
-    cx.textAlign = "left";
-
-    // === PER DAY ===
+    let no = 0;
     dateKeys.forEach((dk, di) => {
-      const items = byDate[dk];
-      const dayTotal = items.reduce((s, e) => s + e.amount, 0);
-
-      // Day header
+      const items = byDate[dk]; const dayTotal = items.reduce((s, e) => s + e.amount, 0);
       if (isMultiDay) {
-        if (di > 0) { y += 4; }
-        cx.fillStyle = "#f0f0f0"; cx.fillRect(M - 8, y, W - 2 * M + 16, 28);
-        cx.font = "bold 13px sans-serif"; cx.fillStyle = "#222222";
-        cx.fillText(fmtDateDisp(dk), M + 4, y + 18);
-        cx.textAlign = "right"; cx.fillStyle = "#cc0000"; cx.font = "bold 13px sans-serif";
-        cx.fillText(fmtCurrency(dayTotal), W - M - 4, y + 18);
-        cx.textAlign = "left"; y += 36;
+        if (di > 0) y += 4;
+        cx.fillStyle = "#f5f5f5"; cx.fillRect(0, y - 2, W, 24);
+        cx.font = "bold 12px sans-serif"; cx.fillStyle = "#333333"; cx.fillText(fmtDateDisp(dk), M, y + 14);
+        cx.textAlign = "right"; cx.fillStyle = "#cc0000"; cx.font = "bold 12px sans-serif"; cx.fillText(fmtCurrency(dayTotal), W - M, y + 14);
+        cx.textAlign = "left"; y += 28;
       }
-
-      // Items table
-      items.forEach((it, ii) => {
+      items.forEach(it => {
+        no++;
         const ec = EXPS.find(x => x.value === it.category);
-        // Alternate row bg
-        if (ii % 2 === 0) { cx.fillStyle = "#fafafa"; cx.fillRect(M - 4, y - 4, W - 2 * M + 8, LH); }
-        // No.
-        cx.font = "11px sans-serif"; cx.fillStyle = "#bbbbbb";
-        cx.fillText(`${String(ii + 1).padStart(2, "0")}`, M, y + 12);
-        // Name
+        if (no % 2 === 0) { cx.fillStyle = "#fafafa"; cx.fillRect(M - 4, y - 3, W - 2 * M + 8, LH); }
+        cx.font = "11px sans-serif"; cx.fillStyle = "#cccccc"; cx.fillText(String(no).padStart(2, "0"), M, y + 14);
         cx.font = "13px sans-serif"; cx.fillStyle = "#222222";
-        const name = `${ec?.emoji || ""} ${it.description}`;
-        cx.fillText(name.length > 32 ? name.slice(0, 30) + "…" : name, M + 24, y + 12);
-        // Amount
-        cx.textAlign = "right"; cx.font = "13px sans-serif"; cx.fillStyle = "#444444";
-        cx.fillText(fmtCurrency(it.amount), W - M, y + 12);
-        cx.textAlign = "left";
-        y += LH;
+        const desc = (ec?.emoji || "") + " " + it.description;
+        cx.fillText(desc.length > 36 ? desc.slice(0, 34) + "..." : desc, M + 34, y + 14);
+        cx.textAlign = "right"; cx.font = "13px sans-serif"; cx.fillStyle = "#333333"; cx.fillText(fmtCurrency(it.amount), W - M, y + 14);
+        cx.textAlign = "left"; y += LH;
       });
-
-      // Day subtotal line (if multi-day)
-      if (isMultiDay) {
-        cx.strokeStyle = "#e0e0e0"; cx.lineWidth = 0.5;
-        cx.beginPath(); cx.moveTo(M, y + 2); cx.lineTo(W - M, y + 2); cx.stroke();
-        y += 6;
-      }
     });
 
-    // === TOTAL SECTION ===
-    y += 8;
-    // Double line
-    cx.strokeStyle = "#222222"; cx.lineWidth = 1.5;
-    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke();
-    cx.beginPath(); cx.moveTo(M, y + 4); cx.lineTo(W - M, y + 4); cx.stroke();
-    y += 20;
+    // Total
+    y += 10;
+    cx.strokeStyle = "#1a1a1a"; cx.lineWidth = 2;
+    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 5;
+    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 18;
+    cx.font = "bold 16px sans-serif"; cx.fillStyle = "#1a1a1a"; cx.fillText("TỔNG CỘNG", M, y);
+    cx.font = "11px sans-serif"; cx.fillStyle = "#999999"; cx.fillText("(" + count + " khoản)", M + 105, y);
+    cx.textAlign = "right"; cx.font = "bold 28px sans-serif"; cx.fillStyle = "#cc0000"; cx.fillText(fmtCurrency(total), W - M, y + 2);
+    cx.textAlign = "left"; y += 36;
 
-    cx.font = "bold 14px sans-serif"; cx.fillStyle = "#222222";
-    cx.fillText("TỔNG CỘNG", M, y);
-    cx.font = "11px sans-serif"; cx.fillStyle = "#888888";
-    cx.fillText(`(${count} khoản)`, M + 90, y);
-    cx.textAlign = "right";
-    cx.font = "bold 24px sans-serif"; cx.fillStyle = "#cc0000";
-    cx.fillText(fmtCurrency(total), W - M, y + 2);
-    cx.textAlign = "left";
-    y += 32;
+    // Footer
+    cx.strokeStyle = "#eeeeee"; cx.lineWidth = 0.5;
+    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 14;
+    cx.textAlign = "center"; cx.font = "11px sans-serif"; cx.fillStyle = "#cccccc";
+    cx.fillText(rangeLabel + "  •  Jay Tracker", W / 2, y); y += 18;
+    cx.fillStyle = "#1a1a1a"; cx.fillRect(0, y, W, 5); y += 12;
 
-    // === FOOTER ===
-    cx.strokeStyle = "#dddddd"; cx.lineWidth = 0.5;
-    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke();
-    y += 16;
-    cx.textAlign = "center"; cx.font = "10px sans-serif"; cx.fillStyle = "#bbbbbb";
-    cx.fillText("Cảm ơn bạn đã sử dụng Jay Tracker", W / 2, y); y += 14;
-    cx.fillText(rangeLabel, W / 2, y); y += 20;
-
-    // Bottom zigzag edge
-    cx.font = "bold 11px monospace"; cx.fillStyle = "#dddddd";
-    cx.fillText("━━━━━━━━━━━━━━━━━━━━━━━━━━━", W / 2, y); y += 12;
-
-    // Crop
+    // Crop & download via blob (works on iPhone)
     const out = document.createElement("canvas"); out.width = W; out.height = y;
-    out.getContext("2d")!.drawImage(cv, 0, 0);
-    // Re-draw body bg on output
     const ox = out.getContext("2d")!;
-    ox.globalCompositeOperation = "destination-over";
     ox.fillStyle = "#ffffff"; ox.fillRect(0, 0, W, y);
-    ox.globalCompositeOperation = "source-over";
+    ox.drawImage(cv, 0, 0);
 
-    const a = document.createElement("a");
-    a.download = `hoa-don-${from === to ? from : from + "-" + to}.png`;
-    a.href = out.toDataURL("image/png"); a.click();
+    out.toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url;
+      a.download = "hoa-don-" + (from === to ? from : from + "-" + to) + ".png";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }, "image/png");
   };
 
   return (<Wrap title="Xuất hóa đơn" onClose={onClose}>
     <div className="flex gap-1 mb-2.5">
-      {([["day", "Ngày"], ["week", canWeek ? "7 ngày" : "7 ngày 🔒"], ["month", canMonth ? "Tháng" : "Tháng 🔒"], ["custom", "Tùy chọn"]] as const).map(([v, l]) => (
-        <button key={v} onClick={() => { if (v === "week" && !canWeek) return; if (v === "month" && !canMonth) return; if (v === "custom") { setCustomFrom(date); setCustomTo(date); } setRange(v); }}
+      {([["day", "Ngày"], ["week", canWeek ? "Tuần" : "Tuần 🔒"], ["month", canMonth ? "Tháng" : "Tháng 🔒"], ["custom", "Gộp ngày"]] as const).map(([v, l]) => (
+        <button key={v} onClick={() => { if (v === "week" && !canWeek) return; if (v === "month" && !canMonth) return; if (v === "custom") setPicked(new Set([date])); setRange(v); }}
           className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${range === v ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"} ${(v === "week" && !canWeek) || (v === "month" && !canMonth) ? "opacity-40" : ""}`}>{l}</button>
       ))}
     </div>
 
     {range === "custom" && (
       <div className="mb-2.5">
-        <div className="flex items-center gap-1.5 mb-1.5">
-          <button onClick={() => setPickSide("from")} className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${pickSide === "from" ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>
-            Từ ngày {customFrom ? fmtDateDisp(customFrom) : "..."}
-          </button>
-          <button onClick={() => setPickSide("to")} className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${pickSide === "to" ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>
-            Đến ngày {customTo ? fmtDateDisp(customTo) : "..."}
-          </button>
-        </div>
-        <div className="text-[10px] text-mute mb-1.5">Chạm ngày có dữ liệu để gán cho “{pickSide === "from" ? "Từ ngày" : "Đến ngày"}”</div>
-        <div className="flex flex-wrap gap-1 mb-2 max-h-28 overflow-y-auto">
+        <div className="text-[10px] text-mute mb-1.5">Chạm chọn / bỏ chọn ngày muốn gộp hóa đơn:</div>
+        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
           {sortedDates.map(d => {
-            const inRange = customFrom && customTo && d >= (customFrom <= customTo ? customFrom : customTo) && d <= (customFrom <= customTo ? customTo : customFrom);
-            const isFrom = customFrom === d;
-            const isTo = customTo === d;
-            return <button key={d} onClick={() => {
-              if (pickSide === "from") setCustomFrom(d); else setCustomTo(d);
-            }} className={`px-2 py-1 rounded-md text-[10px] font-semibold tnum transition-all ${inRange ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line hover:border-ink"}`}>
-              {isFrom && "Từ "}{isTo && !isFrom && "Đến "}{new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
+            const on = picked.has(d); const dd = new Date(d + "T00:00:00");
+            return <button key={d} onClick={() => toggleDate(d)}
+              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold tnum transition-all active:scale-95 ${on ? "bg-ink text-bg ring-2 ring-ink/40" : "bg-bg2 text-mute border border-line"}`}>
+              {dd.getDate()}/{dd.getMonth() + 1}
             </button>;
           })}
         </div>
-        {sortedDates.length === 0 && <div className="text-[10px] text-mute text-center py-2">Chưa có ngày nào có dữ liệu</div>}
+        {picked.size > 0 && <div className="text-[10px] text-green mt-1.5 font-semibold">Đã chọn {picked.size} ngày</div>}
       </div>
     )}
 
     {blocked && <div className="mb-2.5 rounded-md border border-gold/30 bg-gold2 px-2.5 py-2 text-[11px] text-gold font-medium">{blocked}</div>}
 
-    <div className="text-center mb-2">
+    {!blocked && <div className="text-center mb-2">
       <div className="text-[10px] text-mute">{rangeLabel}</div>
       <div className="font-bold text-xl text-red tnum mt-0.5">{fmtCurrency(total)}</div>
       <div className="text-[10px] text-mute">{count} khoản</div>
-    </div>
+    </div>}
 
-    {blocked ? <p className="text-center text-mute text-xs py-3">Chưa thể xuất</p> : count === 0 ? <p className="text-center text-mute text-xs py-4">Không có chi tiêu</p> : (
-      <div className="space-y-2 max-h-[30vh] overflow-y-auto">
+    {!blocked && count === 0 ? <p className="text-center text-mute text-xs py-3">Không có chi tiêu</p> : !blocked && count > 0 ? (<>
+      <div className="space-y-2 max-h-[28vh] overflow-y-auto">
         {dateKeys.map(dk => {
-          const items = byDate[dk];
-          const dayTot = items.reduce((s, e) => s + e.amount, 0);
+          const items = byDate[dk]; const dayTot = items.reduce((s, e) => s + e.amount, 0);
           return (<div key={dk}>
-            {isMultiDay && <div className="flex items-center justify-between text-[11px] font-bold mb-0.5"><span>📅 {fmtDateDisp(dk)}</span><span className="text-red tnum">{fmtCurrency(dayTot)}</span></div>}
-            {items.map(it => {
-              const ec = EXPS.find(x => x.value === it.category);
-              return <div key={it.id} className="flex items-center justify-between pl-3 py-0.5 text-[11px]"><span className="truncate flex-1">{ec?.emoji} {it.description}</span><span className="text-mute tnum shrink-0 ml-2">{fmtCurrency(it.amount)}</span></div>;
-            })}
+            {isMultiDay && <div className="flex items-center justify-between text-[11px] font-bold mb-0.5 bg-bg2 rounded px-2 py-1"><span>{fmtDateDisp(dk)}</span><span className="text-red tnum">{fmtCurrency(dayTot)}</span></div>}
+            {items.map(it => { const ec = EXPS.find(x => x.value === it.category); return <div key={it.id} className="flex items-center justify-between pl-3 py-0.5 text-[11px]"><span className="truncate flex-1">{ec?.emoji} {it.description}</span><span className="text-mute tnum shrink-0 ml-2">{fmtCurrency(it.amount)}</span></div>; })}
           </div>);
         })}
       </div>
-    )}
-
-    <div className="border-t border-dashed border-line mt-2.5 pt-2 flex items-center justify-between">
-      <span className="font-bold text-sm uppercase">Tổng</span>
-      <span className="font-bold text-lg text-red tnum">{fmtCurrency(total)}</span>
-    </div>
-
-    {count > 0 && (
+      <div className="border-t border-dashed border-line mt-2.5 pt-2 flex items-center justify-between">
+        <span className="font-bold text-sm uppercase">Tổng</span>
+        <span className="font-bold text-lg text-red tnum">{fmtCurrency(total)}</span>
+      </div>
       <button onClick={downloadInvoice} className="w-full mt-3 flex items-center justify-center gap-1.5 py-2.5 bg-ink hover:bg-accent text-bg rounded-lg text-xs font-bold transition-colors active:scale-[0.98]">
-        <Ic d={P.dl} size={14} /> Tải hóa đơn (PNG)
+        <Ic d={P.dl} size={14} /> Tải hóa đơn
       </button>
-    )}
+    </>) : null}
   </Wrap>);
 }
 
