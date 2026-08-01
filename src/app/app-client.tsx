@@ -934,87 +934,133 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
   const dateKeys = Object.keys(byDate).sort();
   const isMultiDay = dateKeys.length > 1;
 
-  // Render invoice to canvas — white background, proper receipt style
+  // Render receipt-style invoice
   const downloadInvoice = () => {
-    const W = 640, pad = 36, lineH = 22;
+    const W = 580, M = 32, LH = 24;
     const cv = document.createElement("canvas");
     const cx = cv.getContext("2d")!;
-    cv.width = W; cv.height = 4000;
-    // White background
-    cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, W, 4000);
+    cv.width = W; cv.height = 5000;
+
+    // Fill white
+    cx.fillStyle = "#fafafa"; cx.fillRect(0, 0, W, 5000);
 
     let y = 0;
-    // Top accent bar
-    cx.fillStyle = "#111111"; cx.fillRect(0, 0, W, 6);
-    y = 36;
 
-    // Title
-    cx.font = "bold 24px sans-serif"; cx.fillStyle = "#111111"; cx.textAlign = "center";
-    cx.fillText("HÓA ĐƠN CHI TIÊU", W / 2, y); y += 22;
-    cx.font = "13px sans-serif"; cx.fillStyle = "#666666";
-    cx.fillText("Jay Tracker", W / 2, y); y += 20;
-    cx.fillText(rangeLabel, W / 2, y); y += 28;
+    // === TOP RECEIPT EDGE (zigzag) ===
+    cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, W, 8);
+    y = 8;
 
-    // Separator
-    cx.strokeStyle = "#dddddd"; cx.lineWidth = 1;
-    cx.beginPath(); cx.moveTo(pad, y); cx.lineTo(W - pad, y); cx.stroke(); y += 16;
+    // === RECEIPT BODY (white) ===
+    const bodyStart = y;
+    cx.fillStyle = "#ffffff";
+    // will fill later after we know height
+
+    // Store y for body fill
+    const drawBody = (endY: number) => {
+      cx.fillStyle = "#ffffff"; cx.fillRect(0, bodyStart, W, endY - bodyStart);
+    };
+
+    y = 32;
+
+    // Logo / Title area
+    cx.font = "bold 11px monospace"; cx.fillStyle = "#999999"; cx.textAlign = "center"; cx.letterSpacing = "4px";
+    cx.fillText("━━━━━━━━━━━━━━━━━━━━━━━━━━━", W / 2, y); y += 20;
+    cx.font = "bold 26px sans-serif"; cx.fillStyle = "#111111";
+    cx.fillText("JAY TRACKER", W / 2, y); y += 16;
+    cx.font = "12px sans-serif"; cx.fillStyle = "#999999";
+    cx.fillText("HÓA ĐƠN CHI TIÊU", W / 2, y); y += 20;
+    cx.font = "12px sans-serif"; cx.fillStyle = "#666666";
+    cx.fillText(rangeLabel, W / 2, y); y += 14;
+    cx.font = "bold 11px monospace"; cx.fillStyle = "#999999";
+    cx.fillText("━━━━━━━━━━━━━━━━━━━━━━━━━━━", W / 2, y); y += 18;
 
     cx.textAlign = "left";
 
-    // Per-day sections
-    dateKeys.forEach(dk => {
+    // === PER DAY ===
+    dateKeys.forEach((dk, di) => {
       const items = byDate[dk];
       const dayTotal = items.reduce((s, e) => s + e.amount, 0);
 
+      // Day header
       if (isMultiDay) {
-        // Date header
-        cx.fillStyle = "#f5f5f5"; cx.fillRect(pad - 4, y - 4, W - 2 * pad + 8, 24);
-        cx.font = "bold 13px sans-serif"; cx.fillStyle = "#111111";
-        cx.fillText(`📅 ${fmtDateDisp(dk)}`, pad + 4, y + 12);
+        if (di > 0) { y += 4; }
+        cx.fillStyle = "#f0f0f0"; cx.fillRect(M - 8, y, W - 2 * M + 16, 28);
+        cx.font = "bold 13px sans-serif"; cx.fillStyle = "#222222";
+        cx.fillText(fmtDateDisp(dk), M + 4, y + 18);
         cx.textAlign = "right"; cx.fillStyle = "#cc0000"; cx.font = "bold 13px sans-serif";
-        cx.fillText(fmtCurrency(dayTotal), W - pad - 4, y + 12);
-        cx.textAlign = "left"; y += 30;
+        cx.fillText(fmtCurrency(dayTotal), W - M - 4, y + 18);
+        cx.textAlign = "left"; y += 36;
       }
 
-      // Items
-      cx.font = "13px sans-serif";
-      items.forEach(it => {
+      // Items table
+      items.forEach((it, ii) => {
         const ec = EXPS.find(x => x.value === it.category);
-        cx.fillStyle = "#333333";
-        cx.fillText(`${ec?.emoji || "•"} ${it.description}`, pad + (isMultiDay ? 12 : 0), y);
-        cx.textAlign = "right"; cx.fillStyle = "#888888";
-        cx.fillText(fmtCurrency(it.amount), W - pad, y);
-        cx.textAlign = "left"; y += lineH;
+        // Alternate row bg
+        if (ii % 2 === 0) { cx.fillStyle = "#fafafa"; cx.fillRect(M - 4, y - 4, W - 2 * M + 8, LH); }
+        // No.
+        cx.font = "11px sans-serif"; cx.fillStyle = "#bbbbbb";
+        cx.fillText(`${String(ii + 1).padStart(2, "0")}`, M, y + 12);
+        // Name
+        cx.font = "13px sans-serif"; cx.fillStyle = "#222222";
+        const name = `${ec?.emoji || ""} ${it.description}`;
+        cx.fillText(name.length > 32 ? name.slice(0, 30) + "…" : name, M + 24, y + 12);
+        // Amount
+        cx.textAlign = "right"; cx.font = "13px sans-serif"; cx.fillStyle = "#444444";
+        cx.fillText(fmtCurrency(it.amount), W - M, y + 12);
+        cx.textAlign = "left";
+        y += LH;
       });
-      y += 8;
+
+      // Day subtotal line (if multi-day)
+      if (isMultiDay) {
+        cx.strokeStyle = "#e0e0e0"; cx.lineWidth = 0.5;
+        cx.beginPath(); cx.moveTo(M, y + 2); cx.lineTo(W - M, y + 2); cx.stroke();
+        y += 6;
+      }
     });
 
-    // Bottom separator
-    y += 4;
-    cx.setLineDash([5, 3]); cx.strokeStyle = "#cccccc";
-    cx.beginPath(); cx.moveTo(pad, y); cx.lineTo(W - pad, y); cx.stroke();
-    cx.setLineDash([]); y += 20;
+    // === TOTAL SECTION ===
+    y += 8;
+    // Double line
+    cx.strokeStyle = "#222222"; cx.lineWidth = 1.5;
+    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke();
+    cx.beginPath(); cx.moveTo(M, y + 4); cx.lineTo(W - M, y + 4); cx.stroke();
+    y += 20;
 
-    // TOTAL
-    cx.font = "bold 16px sans-serif"; cx.fillStyle = "#111111";
-    cx.fillText("TỔNG CỘNG", pad, y);
-    cx.textAlign = "right"; cx.fillStyle = "#cc0000";
-    cx.font = "bold 22px sans-serif";
-    cx.fillText(fmtCurrency(total), W - pad, y);
-    y += 30;
+    cx.font = "bold 14px sans-serif"; cx.fillStyle = "#222222";
+    cx.fillText("TỔNG CỘNG", M, y);
+    cx.font = "11px sans-serif"; cx.fillStyle = "#888888";
+    cx.fillText(`(${count} khoản)`, M + 90, y);
+    cx.textAlign = "right";
+    cx.font = "bold 24px sans-serif"; cx.fillStyle = "#cc0000";
+    cx.fillText(fmtCurrency(total), W - M, y + 2);
+    cx.textAlign = "left";
+    y += 32;
 
-    // Footer line
-    cx.fillStyle = "#eeeeee"; cx.fillRect(pad, y, W - 2 * pad, 1); y += 14;
-    cx.textAlign = "center"; cx.font = "11px sans-serif"; cx.fillStyle = "#aaaaaa";
-    cx.fillText(`${count} khoản chi · ${rangeLabel}`, W / 2, y); y += 14;
-    cx.fillText("Jay Tracker", W / 2, y); y += 6;
+    // === FOOTER ===
+    cx.strokeStyle = "#dddddd"; cx.lineWidth = 0.5;
+    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke();
+    y += 16;
+    cx.textAlign = "center"; cx.font = "10px sans-serif"; cx.fillStyle = "#bbbbbb";
+    cx.fillText("Cảm ơn bạn đã sử dụng Jay Tracker", W / 2, y); y += 14;
+    cx.fillText(rangeLabel, W / 2, y); y += 20;
 
-    // Bottom bar
-    cx.fillStyle = "#111111"; cx.fillRect(0, y + 6, W, 6); y += 18;
+    // Bottom zigzag edge
+    cx.font = "bold 11px monospace"; cx.fillStyle = "#dddddd";
+    cx.fillText("━━━━━━━━━━━━━━━━━━━━━━━━━━━", W / 2, y); y += 12;
+
+    // Draw white body background
+    drawBody(y);
 
     // Crop
     const out = document.createElement("canvas"); out.width = W; out.height = y;
     out.getContext("2d")!.drawImage(cv, 0, 0);
+    // Re-draw body bg on output
+    const ox = out.getContext("2d")!;
+    ox.globalCompositeOperation = "destination-over";
+    ox.fillStyle = "#ffffff"; ox.fillRect(0, 0, W, y);
+    ox.globalCompositeOperation = "source-over";
+
     const a = document.createElement("a");
     a.download = `hoa-don-${from === to ? from : from + "-" + to}.png`;
     a.href = out.toDataURL("image/png"); a.click();
