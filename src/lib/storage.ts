@@ -111,10 +111,22 @@ export function getMeals(date?: string): Meal[] {
 }
 export function addMeal(m: Omit<Meal, "id" | "createdAt">): Meal {
   const all = load<Meal>("t_meals");
-  const n: Meal = { ...m, id: uid(), createdAt: new Date().toISOString() };
-  all.push(n); save("t_meals", all); return n;
+  const id = uid();
+  const n: Meal = { ...m, id, createdAt: new Date().toISOString() };
+  // Strip image from localStorage entry — will be saved to IDB separately
+  const forStorage = { ...n, image: n.image ? `idb:img_${id}` : null };
+  all.push(forStorage);
+  save("t_meals", all);
+  return n; // return with original image for immediate display
 }
-export function deleteMeal(id: string) { save("t_meals", load<Meal>("t_meals").filter(m => m.id !== id)); }
+export async function saveMealImage(mealId: string, base64: string): Promise<void> {
+  const { saveImage } = await import("./imgdb");
+  await saveImage(`img_${mealId}`, base64);
+}
+export function deleteMeal(id: string) {
+  save("t_meals", load<Meal>("t_meals").filter(m => m.id !== id));
+  import("./imgdb").then(db => db.deleteImage(`img_${id}`)).catch(() => {});
+}
 
 // ═══ ACTIVITIES ═══
 export function getActivities(date?: string): Activity[] {
@@ -137,10 +149,21 @@ export function getExpenses(date?: string): Expense[] {
 }
 export function addExpense(e: Omit<Expense, "id" | "createdAt">): Expense {
   const all = load<Expense>("t_exps");
-  const n: Expense = { ...e, id: uid(), createdAt: new Date().toISOString() };
-  all.push(n); save("t_exps", all); return n;
+  const id = uid();
+  const n: Expense = { ...e, id, createdAt: new Date().toISOString() };
+  const forStorage = { ...n, image: n.image ? `idb:img_${id}` : null };
+  all.push(forStorage);
+  save("t_exps", all);
+  return n;
 }
-export function deleteExpense(id: string) { save("t_exps", load<Expense>("t_exps").filter(e => e.id !== id)); }
+export async function saveExpenseImage(expId: string, base64: string): Promise<void> {
+  const { saveImage } = await import("./imgdb");
+  await saveImage(`img_${expId}`, base64);
+}
+export function deleteExpense(id: string) {
+  save("t_exps", load<Expense>("t_exps").filter(e => e.id !== id));
+  import("./imgdb").then(db => db.deleteImage(`img_${id}`)).catch(() => {});
+}
 
 // ═══ DAILY STATUS ═══
 export function getDailyStatus(date: string): DailyStatus | null {

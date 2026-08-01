@@ -8,6 +8,7 @@ import {
 } from "@/lib/utils";
 import * as S from "@/lib/storage";
 import { migrateTimezone } from "@/lib/migrate";
+import { migrateImages, resolveImage, saveImage } from "@/lib/imgdb";
 
 /* ═══ ICONS ═══ */
 function Ic({ d, size = 18, sw = 1.8, cls }: { d: string; size?: number; sw?: number; cls?: string }) {
@@ -71,8 +72,34 @@ export default function App() {
     setQnotes(S.getQuickNotes(date)); setPomoSessions(S.getPomoSessions(date));
   }, [date]);
 
-  useEffect(() => { migrateTimezone(); setOk(true); }, []);
+  // Image cache: resolved IDB refs → base64
+  const [imgCache, setImgCache] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    migrateTimezone();
+    // Migrate old inline base64 images to IndexedDB (runs once)
+    migrateImages().then(() => setOk(true)).catch(() => setOk(true));
+  }, []);
   useEffect(() => { if (ok) reload(); }, [ok, reload]);
+
+  // Resolve IDB image refs whenever meals/exps change
+  useEffect(() => {
+    const refs: { id: string; ref: string }[] = [];
+    meals.forEach(m => { if (m.image && m.image.startsWith("idb:")) refs.push({ id: m.id, ref: m.image }); });
+    exps.forEach(e => { if (e.image && e.image.startsWith("idb:")) refs.push({ id: e.id, ref: e.image }); });
+    if (refs.length === 0) return;
+    let cancelled = false;
+    Promise.all(refs.map(async r => {
+      const data = await resolveImage(r.ref);
+      return { id: r.id, data };
+    })).then(results => {
+      if (cancelled) return;
+      const cache: Record<string, string> = {};
+      results.forEach(r => { if (r.data) cache[r.id] = r.data; });
+      setImgCache(prev => ({ ...prev, ...cache }));
+    });
+    return () => { cancelled = true; };
+  }, [meals, exps]);
   useEffect(() => {
     if (!live) { setElapsed(0); return; }
     const tick = () => setElapsed(Date.now() - new Date(live.startedAt).getTime());
@@ -180,6 +207,13 @@ export default function App() {
   meals.forEach(m => { const p = mealPeriod(m.time); const k = `${p.order}|${p.label}|${p.emoji}`; if (!mp[k]) mp[k] = []; mp[k].push(m); });
   const gc = (v: string) => ACTS.find(x => x.value === v);
   const ge = (v: string) => EXPS.find(x => x.value === v);
+
+  // Get displayable image: from cache (IDB) or inline base64
+  const getImg = (id: string, raw: string | null): string | null => {
+    if (!raw) return null;
+    if (raw.startsWith("idb:")) return imgCache[id] || null;
+    return raw; // inline base64
+  };
 
   if (!ok) return <div className="min-h-screen flex items-center justify-center bg-bg"><div className="w-8 h-8 border-2 border-line border-t-ink rounded-full animate-spin" /></div>;
 
@@ -429,15 +463,15 @@ export default function App() {
                   {Object.entries(mp).sort((a, b) => a[0].localeCompare(b[0])).map(([k, ms]) => {
                     const [, label, emoji] = k.split("|");
                     return (<div key={k}><div className="text-[9px] font-bold text-mute2 mb-0.5 uppercase tracking-wider">{emoji} {label}</div>
-                      {ms.map(m => (<div key={m.id} className="flex items-center gap-2 py-1 group">
-                        {m.image ? <button onClick={() => setImg(m.image)} className="w-8 h-8 rounded-md overflow-hidden shrink-0 ring-1 ring-line"><img src={m.image} alt="" className="w-full h-full object-cover" /></button>
+                      {ms.map(m => { const mImg = getImg(m.id, m.image); return (<div key={m.id} className="flex items-center gap-2 py-1 group">
+                        {mImg ? <button onClick={() => setImg(mImg)} className="w-8 h-8 rounded-md overflow-hidden shrink-0 ring-1 ring-line"><img src={mImg} alt="" className="w-full h-full object-cover" /></button>
                         : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0">🍽️</span>}
                         <span className="text-[12px] font-medium flex-1 truncate">{m.foodName}</span>
                         {m.time && <span className="text-[10px] text-mute tnum shrink-0">{m.time}</span>}
                         {m.calories != null && m.calories > 0 && <span className="text-[10px] bg-gold2 text-gold px-1 py-0.5 rounded font-semibold tnum shrink-0">{m.calories}</span>}
                         {m.price != null && m.price > 0 && <span className="text-[10px] bg-red2 text-red px-1 py-0.5 rounded font-semibold tnum shrink-0">{fmtCurrency(m.price)}</span>}
                         <button onClick={() => del("m", m.id)} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
-                      </div>))}
+                      </div>); })}
                     </div>);
                   })}
                   {totCal > 0 && <div className="flex justify-between pt-1.5 border-t border-line text-[11px]"><span className="text-mute">Tổng calories</span><span className="font-bold text-gold tnum">{totCal.toLocaleString()} cal</span></div>}
@@ -450,13 +484,13 @@ export default function App() {
               extra={totExp > 0 ? <span className="font-bold text-[11px] text-red tnum">{fmtCurrency(totExp)}</span> : undefined}>
               {exps.length === 0 ? <Em /> : (
                 <div className="space-y-0.5">
-                  {exps.map(e => (<div key={e.id} className="flex items-start gap-2 py-1 group">
-                    {e.image ? <button onClick={() => setImg(e.image)} className="w-8 h-8 rounded-md overflow-hidden shrink-0 ring-1 ring-line"><img src={e.image} alt="" className="w-full h-full object-cover" /></button>
+                  {exps.map(e => { const eImg = getImg(e.id, e.image); return (<div key={e.id} className="flex items-start gap-2 py-1 group">
+                    {eImg ? <button onClick={() => setImg(eImg)} className="w-8 h-8 rounded-md overflow-hidden shrink-0 ring-1 ring-line"><img src={eImg} alt="" className="w-full h-full object-cover" /></button>
                     : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0">{ge(e.category)?.emoji || "📦"}</span>}
                     <div className="flex-1 min-w-0"><div className="text-[12px] font-medium truncate">{e.description}</div><div className="text-[10px] text-mute">{fmtTimeVN(e.createdAt)} · {ge(e.category)?.label}</div></div>
                     <span className="font-bold text-[11px] text-red tnum shrink-0">−{fmtCurrency(e.amount)}</span>
                     <button onClick={() => del("e", e.id)} className="mt-1 text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
-                  </div>))}
+                  </div>); })}
                 </div>
               )}
             </Sec>
@@ -784,14 +818,17 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
     <div className="flex gap-1.5 mb-2"><input type="time" value={tm} onChange={e => setTm(e.target.value)} className={`${ic} flex-1`} /><input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Cal" className={`${ic} flex-1`} /></div>
     <div className="mb-2"><MoneyIn value={price} onChange={setPrice} placeholder="Giá tiền" /></div>
     {pp != null && pp > 0 && <div className="flex items-center gap-1 bg-gold2 text-gold border border-gold/20 rounded-md px-2 py-1 text-[10px] font-medium mb-2.5 a-pop"><Ic d={P.wallet} size={11} /> Vào chi tiêu</div>}
-    <button onClick={() => {
+    <button onClick={async () => {
       if (!fn.trim()) return;
       try {
-        S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp });
+        const meal = S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp });
+        // Save image to IndexedDB (large storage)
+        if (im) await saveImage(`img_${meal.id}`, im);
         if (pp != null && pp > 0) S.addExpense({ date, category: "food", description: fn.trim(), amount: pp, image: null });
         onDone();
-      } catch {
-        alert("Không lưu được ảnh. Ảnh có thể quá nặng hoặc bộ nhớ trình duyệt đã đầy.");
+      } catch (err) {
+        console.error(err);
+        alert("Lỗi lưu. Thử lại.");
       }
     }} disabled={!fn.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold transition-colors disabled:opacity-30 active:scale-[0.98]">Thêm</button>
   </Wrap>);
@@ -815,13 +852,15 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
     <ImgP value={im} onChange={setIm} />
     <input type="text" value={ds} onChange={e => setDs(e.target.value)} placeholder="Mô tả" autoFocus className={`${ic} mb-2`} />
     <div className="mb-2.5"><MoneyIn value={am} onChange={setAm} placeholder="Số tiền" /></div>
-    <button onClick={() => {
+    <button onClick={async () => {
       if (!ds.trim() || p == null || p <= 0) return;
       try {
-        S.addExpense({ date, category: cat, description: ds.trim(), amount: p, image: im });
+        const exp = S.addExpense({ date, category: cat, description: ds.trim(), amount: p, image: im });
+        if (im) await saveImage(`img_${exp.id}`, im);
         onDone();
-      } catch {
-        alert("Không lưu được ảnh. Ảnh có thể quá nặng hoặc bộ nhớ trình duyệt đã đầy.");
+      } catch (err) {
+        console.error(err);
+        alert("Lỗi lưu. Thử lại.");
       }
     }} disabled={!ds.trim() || p == null || p <= 0} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">{p != null && p > 0 ? `Thêm · ${fmtCurrency(p)}` : "Thêm"}</button>
   </Wrap>);
