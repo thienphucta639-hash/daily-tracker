@@ -617,53 +617,44 @@ function playAlarm() {
   } catch { /* blocked */ }
 }
 
-/* ═══ RECENT LOG — all days activity at a glance ═══ */
+/* ═══ RECENT LOG — compact 1-line per day ═══ */
 function RecentLog({ currentDate }: { currentDate: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const logs = S.getRecentDayLogs(14);
-  const nonEmpty = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0);
-  if (nonEmpty.length <= 1) return null;
-
-  const shown = expanded ? nonEmpty : nonEmpty.slice(0, 4);
-  const gc = (v: string) => ACTS.find(x => x.value === v);
-  const ge = (v: string) => EXPS.find(x => x.value === v);
+  const [open, setOpen] = useState<string | null>(null);
+  const logs = S.getRecentDayLogs(10);
+  const days = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0);
+  if (days.length <= 1) return null;
 
   return (
     <div className="bg-card rounded-lg border border-line overflow-hidden a-rise">
-      <div className="px-2.5 py-2 border-b border-line flex items-center justify-between">
-        <span className="font-bold text-xs">Nhật ký gần đây</span>
-        <span className="text-[9px] text-mute tnum">{nonEmpty.length} ngày</span>
+      <div className="px-2.5 py-1.5 border-b border-line flex items-center justify-between">
+        <span className="font-bold text-[11px]">Nhật ký</span>
+        <span className="text-[9px] text-mute tnum">{days.length} ngày</span>
       </div>
-      <div className="divide-y divide-line/50">
-        {shown.map(day => {
-          const isCur = day.date === currentDate;
-          const totExp = day.expenses.reduce((s, e) => s + e.amount, 0);
-          return (
-            <div key={day.date} className={`px-2.5 py-2 ${isCur ? "bg-ink/5" : ""}`}>
-              <div className="flex items-center justify-between mb-1">
-                <span className={`text-[11px] font-bold ${isCur ? "text-ink" : "text-mute"}`}>{fmtDateDisp(day.date)}</span>
-                {totExp > 0 && <span className="text-[10px] text-red font-bold tnum">{fmtCurrency(totExp)}</span>}
+      {days.map(day => {
+        const cur = day.date === currentDate;
+        const exp = day.expenses.reduce((s, e) => s + e.amount, 0);
+        const isOpen = open === day.date;
+        return (
+          <div key={day.date} className={`border-b border-line/40 last:border-0 ${cur ? "bg-ink/5" : ""}`}>
+            <button onClick={() => setOpen(isOpen ? null : day.date)} className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left">
+              <span className={`text-[10px] font-bold tnum shrink-0 w-10 ${cur ? "text-ink" : "text-mute"}`}>{new Date(day.date + "T00:00:00").getDate()}/{new Date(day.date + "T00:00:00").getMonth() + 1}</span>
+              <span className="flex-1 flex gap-1.5 overflow-hidden">
+                {day.meals.length > 0 && <span className="text-[9px] text-mute shrink-0">🍽{day.meals.length}</span>}
+                {day.activities.length > 0 && <span className="text-[9px] text-mute shrink-0">📋{day.activities.length}</span>}
+              </span>
+              {exp > 0 && <span className="text-[9px] text-red font-bold tnum shrink-0">{fmtCurrency(exp)}</span>}
+              <Ic d={P.down} size={10} cls={`text-mute2 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} />
+            </button>
+            {isOpen && (
+              <div className="px-2.5 pb-1.5 space-y-0.5">
+                {day.meals.map(m => <div key={m.id} className="text-[10px] text-mute pl-10">🍽 {m.foodName}{m.price ? ` · ${fmtCurrency(m.price)}` : ""}</div>)}
+                {day.activities.map(a => <div key={a.id} className="text-[10px] text-mute pl-10">{ACTS.find(x => x.value === a.category)?.emoji || "📋"} {a.title}{a.durationMinutes ? ` · ${fmtDur(a.durationMinutes)}` : ""}</div>)}
+                {day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).map(e => <div key={e.id} className="text-[10px] text-mute pl-10">{EXPS.find(x => x.value === e.category)?.emoji || "💰"} {e.description} · {fmtCurrency(e.amount)}</div>)}
               </div>
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                {day.meals.map(m => (
-                  <span key={m.id} className="text-[10px] text-mute">🍽 {m.foodName}{m.price ? ` · ${fmtCurrency(m.price)}` : ""}</span>
-                ))}
-                {day.activities.map(a => (
-                  <span key={a.id} className="text-[10px] text-mute">{gc(a.category)?.emoji || "📋"} {a.title}{a.durationMinutes ? ` · ${fmtDur(a.durationMinutes)}` : ""}</span>
-                ))}
-                {day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).map(e => (
-                  <span key={e.id} className="text-[10px] text-mute">{ge(e.category)?.emoji || "💰"} {e.description} · {fmtCurrency(e.amount)}</span>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {nonEmpty.length > 4 && (
-        <button onClick={() => setExpanded(!expanded)} className="w-full py-1.5 text-[10px] text-mute font-bold hover:text-ink transition-colors border-t border-line">
-          {expanded ? "Thu gọn" : `Xem thêm ${nonEmpty.length - 4} ngày`}
-        </button>
-      )}
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
