@@ -319,17 +319,28 @@ export interface DayLog {
   meals: Meal[];
   activities: Activity[];
   expenses: Expense[];
+  liveTracks: LiveTrack[];
 }
-export function getRecentDayLogs(maxDays: number = 7): DayLog[] {
+export function getLiveTracksForDate(date: string): LiveTrack[] {
+  return load<LiveTrack>("t_live")
+    .filter(t => !t.isActive && formatDate(new Date(t.startedAt)) === date)
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+export function getAllDataDates(): string[] {
   const dates = new Set<string>();
   getMeals().forEach(m => dates.add(m.date));
   getActivities().forEach(a => dates.add(a.date));
   getExpenses().forEach(e => dates.add(e.date));
-  return Array.from(dates).sort().reverse().slice(0, maxDays).map(date => ({
+  load<LiveTrack>("t_live").forEach(t => { if (!t.isActive) dates.add(formatDate(new Date(t.startedAt))); });
+  return Array.from(dates).sort();
+}
+export function getRecentDayLogs(maxDays: number = 7): DayLog[] {
+  return getAllDataDates().reverse().slice(0, maxDays).map(date => ({
     date,
     meals: getMeals(date),
     activities: getActivities(date),
     expenses: getExpenses(date),
+    liveTracks: getLiveTracksForDate(date),
   }));
 }
 
@@ -339,6 +350,7 @@ export function getHistory() {
   getMeals().forEach(m => dates.add(m.date));
   getActivities().forEach(a => dates.add(a.date));
   getExpenses().forEach(e => dates.add(e.date));
+  load<LiveTrack>("t_live").forEach(t => { if (!t.isActive) dates.add(formatDate(new Date(t.startedAt))); });
   return Array.from(dates).sort().reverse().map(date => {
     const meals = getMeals(date);
     const acts = getActivities(date);

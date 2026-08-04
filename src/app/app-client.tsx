@@ -205,6 +205,10 @@ export default function App() {
   const weekStats = ok ? S.getWeekStats() : [];
   const wMax = Math.max(...weekStats.map(w => w.expense), 1);
   const wTot = weekStats.reduce((s, w) => s + w.expense, 0);
+  const allDataDates = ok ? S.getAllDataDates() : [];
+  const curIdx = allDataDates.indexOf(date);
+  const prevDataDate = curIdx > 0 ? allDataDates[curIdx - 1] : null;
+  const nextDataDate = curIdx >= 0 && curIdx < allDataDates.length - 1 ? allDataDates[curIdx + 1] : null;
 
   const mp: Record<string, S.Meal[]> = {};
   meals.forEach(m => { const p = mealPeriod(m.time); const k = `${p.order}|${p.label}|${p.emoji}`; if (!mp[k]) mp[k] = []; mp[k].push(m); });
@@ -277,17 +281,24 @@ export default function App() {
           ) : (
             /* Row 2 normal: date + stats + timer button */
             <>
-              <div className="flex items-center justify-between mt-1.5">
+              <div className="flex items-center justify-between mt-1.5 gap-1.5">
                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                  <span className="font-bold text-xs">{fmtDateDisp(date)}</span>
-                  {isToday && <span className="text-mute text-[9px]">{getTimeEmoji()} {getTimeOfDay()}</span>}
+                  {prevDataDate && (
+                    <button onClick={() => setDate(prevDataDate)} className="w-10 h-10 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors active:scale-95 shrink-0">
+                      <Ic d={P.left} size={15} />
+                    </button>
+                  )}
+                  <div className="min-w-0">
+                    <span className="font-bold text-xs">{fmtDateDisp(date)}</span>
+                    {isToday && <span className="text-mute text-[9px] ml-1">{getTimeEmoji()} {getTimeOfDay()}</span>}
+                  </div>
                 </div>
-                <div className="flex gap-1 items-center">
-                  <button onClick={() => setTimerSetting(true)} className="flex items-center gap-1 bg-card border border-line hover:border-ink px-2 py-1 rounded-md text-[10px] font-bold text-mute hover:text-ink transition-colors active:scale-95">
+                <div className="flex gap-1.5 items-center shrink-0">
+                  <button onClick={() => setTimerSetting(true)} className="flex items-center gap-1 bg-card border border-line hover:border-ink px-3 py-2 rounded-md text-[10px] font-bold text-mute hover:text-ink transition-colors active:scale-95 min-h-[40px]">
                     <Ic d={P.clock} size={12} /> Hẹn giờ
                   </button>
-                  {!isToday && <button onClick={() => setDate(formatDate(new Date()))} className="px-2 h-7 rounded-md bg-ink/10 text-ink text-[10px] font-bold">Nay</button>}
-                  <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); setDate(formatDate(d)); }} className="w-10 h-10 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors active:scale-95"><Ic d={P.right} size={15} /></button>
+                  {!isToday && <button onClick={() => setDate(formatDate(new Date()))} className="px-3 h-10 rounded-md bg-ink/10 text-ink text-[10px] font-bold min-h-[40px]">Nay</button>}
+                  {nextDataDate && <button onClick={() => setDate(nextDataDate)} className="w-10 h-10 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors active:scale-95"><Ic d={P.right} size={15} /></button>}
                 </div>
               </div>
               {/* Stats */}
@@ -308,7 +319,7 @@ export default function App() {
 
         {/* TAB SWITCHER for mobile */}
         <div className="flex gap-1 bg-card rounded-lg border border-line p-1 mt-2">
-          <button onClick={() => setTab("main")} className={`flex-1 py-1.5 rounded-md text-[11px] font-bold transition-all ${tab === "main" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>📋 Chung</button>
+          <button onClick={() => setTab("main")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "main" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>📋 Chung</button>
           <button onClick={() => setTab("exp")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "exp" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>💰 Chi tiêu</button>
         </div>
 
@@ -330,7 +341,7 @@ export default function App() {
                       <div className="font-bold text-lg tnum shrink-0">{fmtElapsed(elapsed)}</div>
                     </div>
                     <div className="flex gap-1.5 mt-2">
-                      <button onClick={() => { S.stopLiveTrack(); reload(); }} className="flex items-center gap-1 px-3 py-1.5 bg-red/15 border border-red/25 text-red rounded-md text-[11px] font-bold transition-colors active:scale-95"><Ic d={P.stop} size={11} sw={2.5} /> Dừng</button>
+                      <button onClick={() => { S.stopLiveTrack(); reload(); }} className="flex items-center gap-1.5 px-4 py-2 bg-red/15 border border-red/25 text-red rounded-md text-[11px] font-bold transition-colors active:scale-95 min-h-[40px]"><Ic d={P.stop} size={12} sw={2.5} /> Dừng</button>
                       <div className="flex-1 flex gap-1 overflow-x-auto">{ACTS.filter(c => c.value !== live.category).slice(0, 5).map(c => (<button key={c.value} onClick={() => { S.startLiveTrack(c.label, c.value); reload(); }} className="shrink-0 w-7 h-7 rounded-md bg-bg2 hover:bg-line flex items-center justify-center text-xs transition-colors active:scale-90 border border-line">{c.emoji}</button>))}</div>
                     </div>
                   </div>
@@ -338,7 +349,7 @@ export default function App() {
                   <div className="bg-card rounded-xl p-2.5 border border-line">
                     <div className="text-[10px] text-mute mb-1.5 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green a-blink" />Chọn để track:</div>
                     <div className="flex gap-1 overflow-x-auto pb-0.5">
-                      {ACTS.map(c => (<button key={c.value} onClick={() => { S.startLiveTrack(c.label, c.value); reload(); }} className="shrink-0 flex items-center gap-1 bg-bg2 hover:bg-green/10 hover:text-green border border-line px-2 py-1 rounded-md text-[11px] transition-all active:scale-95">{c.emoji} {c.label}</button>))}
+                      {ACTS.map(c => (<button key={c.value} onClick={() => { S.startLiveTrack(c.label, c.value); reload(); }} className="shrink-0 flex items-center gap-1.5 bg-bg2 hover:bg-green/10 hover:text-green border border-line px-3 py-2 rounded-md text-[11px] transition-all active:scale-95 min-h-[40px]">{c.emoji} {c.label}</button>))}
                     </div>
                   </div>
                 )}
@@ -624,7 +635,7 @@ function playAlarm() {
 function RecentLog({ currentDate }: { currentDate: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const logs = S.getRecentDayLogs(10);
-  const days = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0);
+  const days = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0 || l.liveTracks.length > 0);
   if (days.length <= 1) return null;
 
   return (
@@ -644,12 +655,14 @@ function RecentLog({ currentDate }: { currentDate: string }) {
               <span className="flex-1 flex gap-1.5 overflow-hidden">
                 {day.meals.length > 0 && <span className="text-[9px] text-mute shrink-0">🍽{day.meals.length}</span>}
                 {day.activities.length > 0 && <span className="text-[9px] text-mute shrink-0">📋{day.activities.length}</span>}
+                {day.liveTracks.length > 0 && <span className="text-[9px] text-mute shrink-0">⏱{day.liveTracks.length}</span>}
               </span>
               {exp > 0 && <span className="text-[9px] text-red font-bold tnum shrink-0">{fmtCurrency(exp)}</span>}
               <Ic d={P.down} size={10} cls={`text-mute2 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} />
             </button>
             {isOpen && (
               <div className="px-2.5 pb-1.5 space-y-0.5">
+                {day.liveTracks.map(t => <div key={t.id} className="text-[10px] text-mute pl-10">⏱ {t.title}</div>)}
                 {day.meals.map(m => <div key={m.id} className="text-[10px] text-mute pl-10">🍽 {m.foodName}{m.price ? ` · ${fmtCurrency(m.price)}` : ""}</div>)}
                 {day.activities.map(a => <div key={a.id} className="text-[10px] text-mute pl-10">{ACTS.find(x => x.value === a.category)?.emoji || "📋"} {a.title}{a.durationMinutes ? ` · ${fmtDur(a.durationMinutes)}` : ""}</div>)}
                 {day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).map(e => <div key={e.id} className="text-[10px] text-mute pl-10">{EXPS.find(x => x.value === e.category)?.emoji || "💰"} {e.description} · {fmtCurrency(e.amount)}</div>)}
