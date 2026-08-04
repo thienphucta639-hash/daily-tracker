@@ -67,7 +67,10 @@ export default function App() {
   const reload = useCallback(() => {
     setMeals(S.getMeals(date)); setActs(S.getActivities(date)); setExps(S.getExpenses(date));
     setStatus(S.getDailyStatus(date)); setStreak(S.getStreak());
-    const l = S.getLiveTracks(); setLive(l.active); setLiveR(l.recent);
+    const l = S.getLiveTracks();
+    setLive(l.active);
+    // Only show tracked sessions that belong to the currently viewed date
+    setLiveR(l.recent.filter(r => formatDate(new Date(r.startedAt)) === date));
     setHabits(S.getHabitsForDate(date)); setHabitChecks(S.getHabitChecks(date));
     setQnotes(S.getQuickNotes(date)); setPomoSessions(S.getPomoSessions(date));
   }, [date]);
@@ -284,7 +287,7 @@ export default function App() {
                     <Ic d={P.clock} size={12} /> Hẹn giờ
                   </button>
                   {!isToday && <button onClick={() => setDate(formatDate(new Date()))} className="px-2 h-7 rounded-md bg-ink/10 text-ink text-[10px] font-bold">Nay</button>}
-                  <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); setDate(formatDate(d)); }} className="w-7 h-7 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors"><Ic d={P.right} size={13} /></button>
+                  <button onClick={() => { const d = new Date(date); d.setDate(d.getDate() + 1); setDate(formatDate(d)); }} className="w-10 h-10 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors active:scale-95"><Ic d={P.right} size={15} /></button>
                 </div>
               </div>
               {/* Stats */}
@@ -306,7 +309,7 @@ export default function App() {
         {/* TAB SWITCHER for mobile */}
         <div className="flex gap-1 bg-card rounded-lg border border-line p-1 mt-2">
           <button onClick={() => setTab("main")} className={`flex-1 py-1.5 rounded-md text-[11px] font-bold transition-all ${tab === "main" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>📋 Chung</button>
-          <button onClick={() => setTab("exp")} className={`flex-1 py-1.5 rounded-md text-[11px] font-bold transition-all ${tab === "exp" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>💰 Chi tiêu</button>
+          <button onClick={() => setTab("exp")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "exp" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>💰 Chi tiêu</button>
         </div>
 
         {tab === "main" ? (
@@ -520,7 +523,7 @@ export default function App() {
       </main>
 
       {/* BOTTOM NAV — always visible */}
-      <nav className="fixed bottom-0 inset-x-0 bg-bg/95 backdrop-blur-md border-t border-line py-1.5 z-30">
+      <nav className="fixed bottom-0 inset-x-0 bg-bg/95 backdrop-blur-md border-t border-line py-2 z-30">
         <div className="flex justify-around max-w-xl mx-auto">
           {[
             { d: P.fork, l: "Ăn", m: "meal" },
@@ -546,7 +549,7 @@ export default function App() {
                   setModal(b.m);
                 }
               }}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1 active:scale-90 transition-all ${
+              className={`flex flex-col items-center justify-center gap-0.5 min-h-[52px] min-w-[60px] px-4 py-1.5 rounded-lg active:scale-90 transition-all ${
                 (b.m === "pomo" && (timerRunning || timerSetting)) || modal === b.m
                   ? "text-ink"
                   : "text-mute hover:text-ink"
