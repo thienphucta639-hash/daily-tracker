@@ -68,7 +68,7 @@ export default function App() {
     setMeals(S.getMeals(date)); setActs(S.getActivities(date)); setExps(S.getExpenses(date));
     setStatus(S.getDailyStatus(date)); setStreak(S.getStreak());
     const l = S.getLiveTracks(); setLive(l.active); setLiveR(l.recent);
-    setHabits(S.getHabits()); setHabitChecks(S.getHabitChecks(date));
+    setHabits(S.getHabitsForDate(date)); setHabitChecks(S.getHabitChecks(date));
     setQnotes(S.getQuickNotes(date)); setPomoSessions(S.getPomoSessions(date));
   }, [date]);
 
@@ -514,6 +514,9 @@ export default function App() {
             )}
           </>
         )}
+
+        {/* RECENT ACTIVITY LOG — shows all days at a glance */}
+        <RecentLog currentDate={date} />
       </main>
 
       {/* BOTTOM NAV — always visible */}
@@ -561,7 +564,7 @@ export default function App() {
       {modal === "exp" && <ExpModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
       {modal === "inv" && <InvModal date={date} exps={exps} onClose={() => setModal(null)} />}
       {modal === "hist" && <HistModal onClose={() => setModal(null)} onPick={d => { setDate(d); setModal(null); }} onChanged={reload} />}
-      {modal === "addHabit" && <AddHabitModal onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
+      {modal === "addHabit" && <AddHabitModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
       {modal === "qn" && <QNModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
 
       {/* IMAGE VIEWER */}
@@ -612,6 +615,57 @@ function playAlarm() {
       ring(1320, i * 0.5 + 0.3, 0.15);
     }
   } catch { /* blocked */ }
+}
+
+/* ═══ RECENT LOG — all days activity at a glance ═══ */
+function RecentLog({ currentDate }: { currentDate: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const logs = S.getRecentDayLogs(14);
+  const nonEmpty = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0);
+  if (nonEmpty.length <= 1) return null;
+
+  const shown = expanded ? nonEmpty : nonEmpty.slice(0, 4);
+  const gc = (v: string) => ACTS.find(x => x.value === v);
+  const ge = (v: string) => EXPS.find(x => x.value === v);
+
+  return (
+    <div className="bg-card rounded-lg border border-line overflow-hidden a-rise">
+      <div className="px-2.5 py-2 border-b border-line flex items-center justify-between">
+        <span className="font-bold text-xs">Nhật ký gần đây</span>
+        <span className="text-[9px] text-mute tnum">{nonEmpty.length} ngày</span>
+      </div>
+      <div className="divide-y divide-line/50">
+        {shown.map(day => {
+          const isCur = day.date === currentDate;
+          const totExp = day.expenses.reduce((s, e) => s + e.amount, 0);
+          return (
+            <div key={day.date} className={`px-2.5 py-2 ${isCur ? "bg-ink/5" : ""}`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className={`text-[11px] font-bold ${isCur ? "text-ink" : "text-mute"}`}>{fmtDateDisp(day.date)}</span>
+                {totExp > 0 && <span className="text-[10px] text-red font-bold tnum">{fmtCurrency(totExp)}</span>}
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                {day.meals.map(m => (
+                  <span key={m.id} className="text-[10px] text-mute">🍽 {m.foodName}{m.price ? ` · ${fmtCurrency(m.price)}` : ""}</span>
+                ))}
+                {day.activities.map(a => (
+                  <span key={a.id} className="text-[10px] text-mute">{gc(a.category)?.emoji || "📋"} {a.title}{a.durationMinutes ? ` · ${fmtDur(a.durationMinutes)}` : ""}</span>
+                ))}
+                {day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).map(e => (
+                  <span key={e.id} className="text-[10px] text-mute">{ge(e.category)?.emoji || "💰"} {e.description} · {fmtCurrency(e.amount)}</span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {nonEmpty.length > 4 && (
+        <button onClick={() => setExpanded(!expanded)} className="w-full py-1.5 text-[10px] text-mute font-bold hover:text-ink transition-colors border-t border-line">
+          {expanded ? "Thu gọn" : `Xem thêm ${nonEmpty.length - 4} ngày`}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function DayNote({ status, date, onSave }: { status: S.DailyStatus | null; date: string; onSave: () => void }) {
@@ -866,7 +920,7 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
   </Wrap>);
 }
 
-function AddHabitModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
+function AddHabitModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("✅");
   const [desc, setDesc] = useState("");
@@ -874,7 +928,7 @@ function AddHabitModal({ onDone, onClose }: { onDone: () => void; onClose: () =>
     <div className="flex gap-1.5 mb-2.5 flex-wrap">{["✅","📖","🏃","💊","🧘","💪","🚰","🎯","✍️","🛌","🧹","💤","🍎","🚫","💻"].map(e => (<button key={e} onClick={() => setEmoji(e)} className={`w-8 h-8 rounded-md flex items-center justify-center text-sm transition-all ${emoji === e ? "bg-ink text-bg scale-110" : "bg-bg2 border border-line"}`}>{e}</button>))}</div>
     <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên thói quen" autoFocus className={`${ic} mb-2`} />
     <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Chi tiết (mục tiêu, cách thực hiện...)" className={`${ic} mb-2.5`} />
-    <button onClick={() => { if (!name.trim()) return; S.addHabit(name.trim(), emoji, desc.trim() || null); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
+    <button onClick={() => { if (!name.trim()) return; S.addHabit(name.trim(), emoji, desc.trim() || null, date); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
   </Wrap>);
 }
 

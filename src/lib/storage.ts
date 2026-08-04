@@ -57,12 +57,13 @@ export interface LiveTrack {
   isActive: boolean;
 }
 
-// NEW: Habits
+// Habits — each habit belongs to the date it was created
 export interface Habit {
   id: string;
   name: string;
   emoji: string;
   description: string | null;
+  date: string | null; // null = old habits (show on all days for backward compat)
   createdAt: string;
 }
 
@@ -197,11 +198,19 @@ export function stopLiveTrack() {
 }
 export function deleteLiveTrack(id: string) { save("t_live", load<LiveTrack>("t_live").filter(t => t.id !== id)); }
 
-// ═══ HABITS (NEW — key: t_habits, t_habit_checks) ═══
-export function getHabits(): Habit[] { return load<Habit>("t_habits"); }
-export function addHabit(name: string, emoji: string, description?: string | null): Habit {
+// ═══ HABITS — scoped to the date they were added ═══
+export function getHabits(date?: string): Habit[] {
   const all = load<Habit>("t_habits");
-  const n: Habit = { id: uid(), name, emoji, description: description || null, createdAt: new Date().toISOString() };
+  if (!date) return all;
+  // Show habits that belong to this date, or old habits without date field (backward compat)
+  return all.filter(h => h.date === date || h.date === null || h.date === undefined);
+}
+export function getHabitsForDate(date: string): Habit[] {
+  return load<Habit>("t_habits").filter(h => h.date === date);
+}
+export function addHabit(name: string, emoji: string, description?: string | null, date?: string): Habit {
+  const all = load<Habit>("t_habits");
+  const n: Habit = { id: uid(), name, emoji, description: description || null, date: date || null, createdAt: new Date().toISOString() };
   all.push(n); save("t_habits", all); return n;
 }
 export function deleteHabit(id: string) {
@@ -302,6 +311,26 @@ export function getWeekStats() {
     });
   }
   return days;
+}
+
+// ═══ RECENT ACTIVITY LOG — all days combined ═══
+export interface DayLog {
+  date: string;
+  meals: Meal[];
+  activities: Activity[];
+  expenses: Expense[];
+}
+export function getRecentDayLogs(maxDays: number = 7): DayLog[] {
+  const dates = new Set<string>();
+  getMeals().forEach(m => dates.add(m.date));
+  getActivities().forEach(a => dates.add(a.date));
+  getExpenses().forEach(e => dates.add(e.date));
+  return Array.from(dates).sort().reverse().slice(0, maxDays).map(date => ({
+    date,
+    meals: getMeals(date),
+    activities: getActivities(date),
+    expenses: getExpenses(date),
+  }));
 }
 
 // ═══ HISTORY ═══
