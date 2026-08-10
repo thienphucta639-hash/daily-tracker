@@ -372,6 +372,7 @@ export function exportAll(): string {
     live: load<LiveTrack>("t_live"), habits: load<Habit>("t_habits"),
     habitChecks: load<HabitCheck>("t_habit_checks"), qnotes: load<QuickNote>("t_qnotes"),
     pomo: load<PomodoroSession>("t_pomo"),
+    plans: load<PlanItem>("t_plans"), schedules: load<Schedule>("t_schedules"),
   }, null, 2);
 }
 
@@ -388,6 +389,99 @@ export function importAll(json: string): boolean {
     if (d.habitChecks) save("t_habit_checks", d.habitChecks);
     if (d.qnotes) save("t_qnotes", d.qnotes);
     if (d.pomo) save("t_pomo", d.pomo);
+    if (d.plans) save("t_plans", d.plans);
+    if (d.schedules) save("t_schedules", d.schedules);
     return true;
   } catch { return false; }
+}
+
+// ═══ DAILY PLANNER — tasks/plans for a specific date ═══
+export interface PlanItem {
+  id: string;
+  date: string;
+  time: string | null;
+  title: string;
+  detail: string | null;
+  done: boolean;
+  category: string;
+  priority: number; // 0=normal, 1=important, 2=urgent
+  budget: number | null; // expected cost in VND
+  result: string | null; // note after completion
+  createdAt: string;
+}
+
+export function getPlans(date: string): PlanItem[] {
+  return load<PlanItem>("t_plans").filter(p => p.date === date).sort((a, b) => {
+    // Sort: urgent first, then by time
+    const pa = (a.priority || 0); const pb = (b.priority || 0);
+    if (pb !== pa) return pb - pa;
+    return (a.time || "99:99").localeCompare(b.time || "99:99");
+  });
+}
+export function addPlan(p: Omit<PlanItem, "id" | "done" | "createdAt" | "result">): PlanItem {
+  const all = load<PlanItem>("t_plans");
+  const n: PlanItem = { ...p, id: uid(), done: false, result: null, priority: p.priority || 0, budget: p.budget || null, createdAt: new Date().toISOString() };
+  all.push(n); save("t_plans", all); return n;
+}
+export function togglePlan(id: string) {
+  const all = load<PlanItem>("t_plans");
+  const p = all.find(x => x.id === id);
+  if (p) p.done = !p.done;
+  save("t_plans", all);
+}
+export function updatePlanResult(id: string, result: string) {
+  const all = load<PlanItem>("t_plans");
+  const p = all.find(x => x.id === id);
+  if (p) p.result = result || null;
+  save("t_plans", all);
+}
+export function deletePlan(id: string) {
+  save("t_plans", load<PlanItem>("t_plans").filter(p => p.id !== id));
+}
+// Copy plans from one date to another
+export function copyPlans(fromDate: string, toDate: string) {
+  const src = getPlans(fromDate);
+  src.forEach(p => addPlan({ date: toDate, time: p.time, title: p.title, detail: p.detail, category: p.category, priority: p.priority || 0, budget: p.budget }));
+}
+// Get dates that have plans
+export function getPlanDates(): string[] {
+  return Array.from(new Set(load<PlanItem>("t_plans").map(p => p.date))).sort().reverse();
+}
+
+// ═══ SCHEDULE TEMPLATES — reusable time blocks ═══
+export interface Schedule {
+  id: string;
+  name: string; // e.g. "Gym", "Work day", "Weekend"
+  items: ScheduleBlock[];
+  createdAt: string;
+}
+export interface ScheduleBlock {
+  time: string; // HH:mm
+  endTime: string | null;
+  title: string;
+  category: string;
+}
+
+export function getSchedules(): Schedule[] { return load<Schedule>("t_schedules"); }
+export function addSchedule(name: string, items: ScheduleBlock[]): Schedule {
+  const all = load<Schedule>("t_schedules");
+  const n: Schedule = { id: uid(), name, items, createdAt: new Date().toISOString() };
+  all.push(n); save("t_schedules", all); return n;
+}
+export function updateSchedule(id: string, name: string, items: ScheduleBlock[]) {
+  const all = load<Schedule>("t_schedules");
+  const s = all.find(x => x.id === id);
+  if (s) { s.name = name; s.items = items; }
+  save("t_schedules", all);
+}
+export function deleteSchedule(id: string) {
+  save("t_schedules", load<Schedule>("t_schedules").filter(s => s.id !== id));
+}
+// Apply a schedule template to a date as plan items
+export function applySchedule(scheduleId: string, date: string) {
+  const s = getSchedules().find(x => x.id === scheduleId);
+  if (!s) return;
+  s.items.forEach(block => {
+    addPlan({ date, time: block.time, title: block.title, detail: block.endTime ? `${block.time}–${block.endTime}` : null, category: block.category, priority: 0, budget: null });
+  });
 }

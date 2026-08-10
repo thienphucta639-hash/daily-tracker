@@ -49,7 +49,8 @@ export default function App() {
   const [habitChecks, setHabitChecks] = useState<S.HabitCheck[]>([]);
   const [qnotes, setQnotes] = useState<S.QuickNote[]>([]);
   const [pomoSessions, setPomoSessions] = useState<S.PomodoroSession[]>([]);
-  const [tab, setTab] = useState<"main" | "exp">("main");
+  const [plans, setPlans] = useState<S.PlanItem[]>([]);
+  const [tab, setTab] = useState<"main" | "exp" | "plan">("main");
   const [now, setNow] = useState(Date.now());
   // Timer state lifted to top so it shows in header
   const [timerRunning, setTimerRunning] = useState(false);
@@ -73,6 +74,7 @@ export default function App() {
     setLiveR(l.recent.filter(r => formatDate(new Date(r.startedAt)) === date));
     setHabits(S.getHabitsForDate(date)); setHabitChecks(S.getHabitChecks(date));
     setQnotes(S.getQuickNotes(date)); setPomoSessions(S.getPomoSessions(date));
+    setPlans(S.getPlans(date));
   }, [date]);
 
   // Image cache: resolved IDB refs → base64
@@ -321,6 +323,7 @@ export default function App() {
         <div className="flex gap-1 bg-card rounded-lg border border-line p-1 mt-2">
           <button onClick={() => setTab("main")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "main" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>📋 Chung</button>
           <button onClick={() => setTab("exp")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "exp" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>💰 Chi tiêu</button>
+          <button onClick={() => setTab("plan")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "plan" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>📅 Kế hoạch</button>
         </div>
 
         {tab === "main" ? (
@@ -452,7 +455,7 @@ export default function App() {
             {/* DAILY NOTE inline */}
             <DayNote status={status} date={date} onSave={reload} />
           </>
-        ) : (
+        ) : tab === "exp" ? (
           <>
             {/* ═══ CHI TIÊU TAB ═══ */}
             {/* Summary card */}
@@ -527,7 +530,19 @@ export default function App() {
               </div>
             )}
           </>
-        )}
+        ) : tab === "plan" ? (
+          <>
+            {/* ═══ PLANNER TAB ═══ */}
+            {/* Schedule templates */}
+            <ScheduleSection date={date} onApply={reload} />
+
+            {/* Copy plans from another day */}
+            <CopyPlansSection currentDate={date} onCopy={reload} />
+
+            {/* Today's plan */}
+            <PlanList plans={plans} date={date} onChanged={reload} onAdd={() => setModal("addPlan")} />
+          </>
+        ) : null}
 
         {/* RECENT ACTIVITY LOG — shows all days at a glance */}
         <RecentLog currentDate={date} />
@@ -580,6 +595,8 @@ export default function App() {
       {modal === "hist" && <HistModal onClose={() => setModal(null)} onPick={d => { setDate(d); setModal(null); }} onChanged={reload} />}
       {modal === "addHabit" && <AddHabitModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
       {modal === "qn" && <QNModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
+      {modal === "addPlan" && <AddPlanModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
+      {modal === "addSchedule" && <AddScheduleModal onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
 
       {/* IMAGE VIEWER */}
       {img && (
@@ -1120,6 +1137,219 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
       </button>
     </>) : null}
   </Wrap>);
+}
+
+/* ═══ ADD PLAN MODAL ═══ */
+function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
+  const [title, setTitle] = useState("");
+  const [detail, setDetail] = useState("");
+  const [time, setTime] = useState("");
+  const [cat, setCat] = useState("work");
+  const [priority, setPriority] = useState(0);
+  const [budgetStr, setBudgetStr] = useState("");
+  const budgetParsed = parseMoney(budgetStr);
+  return (<Wrap title="Thêm kế hoạch" onClose={onClose}>
+    <div className="flex flex-wrap gap-1.5 mb-2">{ACTS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold min-h-[36px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{c.emoji} {c.label}</button>))}</div>
+    <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề" autoFocus className={`${ic} mb-2`} />
+    <input type="text" value={detail} onChange={e => setDetail(e.target.value)} placeholder="Chi tiết / mục tiêu" className={`${ic} mb-2`} />
+    <div className="flex gap-2 mb-2">
+      <input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} flex-1`} />
+      <div className="flex-1"><MoneyIn value={budgetStr} onChange={setBudgetStr} placeholder="Chi phí dự kiến" /></div>
+    </div>
+    <div className="flex gap-1.5 mb-2.5">
+      <span className="text-[10px] text-mute self-center shrink-0">Mức độ:</span>
+      {[{ v: 0, l: "Bình thường", c: "border-line text-mute" }, { v: 1, l: "⚠️ Quan trọng", c: "border-gold/40 text-gold" }, { v: 2, l: "🔴 Gấp", c: "border-red/40 text-red" }].map(p => (
+        <button key={p.v} onClick={() => setPriority(p.v)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold min-h-[36px] transition-all border ${priority === p.v ? "bg-ink text-bg border-ink" : `bg-bg2 ${p.c}`}`}>{p.l}</button>
+      ))}
+    </div>
+    <button onClick={() => { if (!title.trim()) return; S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed }); onDone(); }} disabled={!title.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
+  </Wrap>);
+}
+
+/* ═══ ADD SCHEDULE TEMPLATE MODAL ═══ */
+function AddScheduleModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [blocks, setBlocks] = useState<S.ScheduleBlock[]>([{ time: "06:00", endTime: "07:00", title: "", category: "exercise" }]);
+
+  const addBlock = () => setBlocks([...blocks, { time: "", endTime: "", title: "", category: "work" }]);
+  const removeBlock = (i: number) => setBlocks(blocks.filter((_, idx) => idx !== i));
+  const updateBlock = (i: number, field: keyof S.ScheduleBlock, val: string) => {
+    const nb = [...blocks]; (nb[i] as unknown as Record<string, string>)[field] = val; setBlocks(nb);
+  };
+
+  return (<Wrap title="Tạo thời khóa biểu" onClose={onClose}>
+    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên (Gym, Làm việc, Cuối tuần...)" autoFocus className={`${ic} mb-2.5`} />
+    <div className="space-y-2 mb-2.5 max-h-[40vh] overflow-y-auto">
+      {blocks.map((b, i) => (
+        <div key={i} className="bg-bg2 rounded-lg p-2 border border-line space-y-1.5">
+          <div className="flex gap-1.5">
+            <input type="time" value={b.time} onChange={e => updateBlock(i, "time", e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
+            <span className="text-mute self-center text-[10px]">→</span>
+            <input type="time" value={b.endTime || ""} onChange={e => updateBlock(i, "endTime", e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
+            <button onClick={() => removeBlock(i)} className="text-mute2 hover:text-red shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center"><Ic d={P.x} size={12} /></button>
+          </div>
+          <input type="text" value={b.title} onChange={e => updateBlock(i, "title", e.target.value)} placeholder="Nội dung" className="w-full px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
+          <div className="flex gap-1 overflow-x-auto">
+            {ACTS.slice(0, 6).map(c => (<button key={c.value} onClick={() => updateBlock(i, "category", c.value)} className={`shrink-0 px-1.5 py-1 rounded text-[9px] font-bold ${b.category === c.value ? "bg-ink text-bg" : "bg-card text-mute border border-line"}`}>{c.emoji}</button>))}
+          </div>
+        </div>
+      ))}
+    </div>
+    <button onClick={addBlock} className="w-full py-2 border border-dashed border-line rounded-lg text-[10px] text-mute hover:text-ink hover:border-ink font-bold mb-2.5">+ Thêm khung giờ</button>
+    <button onClick={() => { if (!name.trim() || blocks.length === 0) return; S.addSchedule(name.trim(), blocks.filter(b => b.title.trim())); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Lưu thời khóa biểu</button>
+  </Wrap>);
+}
+
+/* ═══ SCHEDULE SECTION — templates + apply ═══ */
+function ScheduleSection({ date, onApply }: { date: string; onApply: () => void }) {
+  const [modal, setModal] = useState(false);
+  const schedules = S.getSchedules();
+
+  return (
+    <div className="bg-card rounded-lg border border-line overflow-hidden">
+      <div className="flex items-center px-2.5 py-2 gap-2 border-b border-line">
+        <span className="w-6 h-6 rounded-md bg-bg2 border border-line flex items-center justify-center text-mute shrink-0"><Ic d={P.clock} size={12} /></span>
+        <span className="font-bold text-xs flex-1">Thời khóa biểu</span>
+        <button onClick={() => setModal(true)} className="w-7 h-7 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90"><Ic d={P.plus} size={13} sw={2.5} /></button>
+      </div>
+      {schedules.length === 0 ? (
+        <div className="px-3 py-3 text-center text-mute text-[11px]">Tạo thời khóa biểu mẫu (Gym, Làm việc...) rồi áp dụng nhanh cho bất kỳ ngày nào.</div>
+      ) : (
+        <div className="divide-y divide-line/40">
+          {schedules.map(s => (
+            <div key={s.id} className="px-2.5 py-2 flex items-center gap-2 group">
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] font-medium">{s.name}</div>
+                <div className="text-[10px] text-mute">{s.items.length} khung giờ · {s.items.map(b => b.time).join(", ")}</div>
+              </div>
+              <button onClick={() => { S.applySchedule(s.id, date); onApply(); }} className="px-3 py-1.5 bg-green2 border border-green/20 text-green rounded-md text-[10px] font-bold min-h-[36px] transition-colors active:scale-95">Áp dụng</button>
+              <button onClick={() => { if (confirm("Xóa?")) { S.deleteSchedule(s.id); onApply(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center"><Ic d={P.x} size={12} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {modal && <AddScheduleModal onDone={() => { onApply(); setModal(false); }} onClose={() => setModal(false)} />}
+    </div>
+  );
+}
+
+/* ═══ COPY PLANS FROM ANOTHER DAY ═══ */
+function CopyPlansSection({ currentDate, onCopy }: { currentDate: string; onCopy: () => void }) {
+  const dates = S.getPlanDates().filter(d => d !== currentDate);
+  if (dates.length === 0) return null;
+  return (
+    <div className="bg-card rounded-lg border border-line p-2.5">
+      <div className="text-[10px] text-mute font-bold mb-1.5">Sao chép kế hoạch từ ngày khác:</div>
+      <div className="flex gap-1.5 overflow-x-auto">
+        {dates.slice(0, 8).map(d => (
+          <button key={d} onClick={() => { S.copyPlans(d, currentDate); onCopy(); }}
+            className="shrink-0 px-3 py-2 bg-bg2 border border-line rounded-lg text-[10px] font-bold tnum min-h-[40px] hover:border-ink active:scale-95 transition-all">
+            {new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
+            <div className="text-[8px] text-mute font-normal">{S.getPlans(d).length} mục</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══ PLAN LIST with priority, budget, result ═══ */
+function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date: string; onChanged: () => void; onAdd: () => void }) {
+  const [resultId, setResultId] = useState<string | null>(null);
+  const [resultText, setResultText] = useState("");
+  const totalBudget = plans.reduce((s, p) => s + (p.budget || 0), 0);
+  const doneCount = plans.filter(p => p.done).length;
+  const pct = plans.length > 0 ? Math.round((doneCount / plans.length) * 100) : 0;
+
+  const priorityBadge = (p: number) => {
+    if (p === 2) return <span className="text-[8px] bg-red/15 text-red border border-red/20 px-1 py-0.5 rounded font-bold shrink-0">GẤP</span>;
+    if (p === 1) return <span className="text-[8px] bg-gold/15 text-gold border border-gold/20 px-1 py-0.5 rounded font-bold shrink-0">Q.TRỌNG</span>;
+    return null;
+  };
+
+  // Next upcoming plan (today only)
+  const now = new Date();
+  const nowHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const isToday = date === formatDate(now);
+  const nextPlan = isToday ? plans.find(p => !p.done && p.time && p.time > nowHM) : null;
+
+  return (
+    <div className="bg-card rounded-lg border border-line overflow-hidden">
+      <div className="flex items-center px-2.5 py-2 gap-2 border-b border-line">
+        <span className="font-bold text-xs flex-1">Kế hoạch ngày</span>
+        <span className="text-[9px] text-mute tnum">{doneCount}/{plans.length}</span>
+        <button onClick={onAdd} className="w-8 h-8 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90"><Ic d={P.plus} size={13} sw={2.5} /></button>
+      </div>
+
+      {/* Next upcoming reminder */}
+      {nextPlan && (
+        <div className="px-2.5 py-1.5 bg-gold2 border-b border-gold/20 flex items-center gap-2">
+          <span className="text-gold text-[10px] font-bold">⏰ Sắp tới:</span>
+          <span className="text-[10px] text-gold font-bold tnum">{nextPlan.time}</span>
+          <span className="text-[10px] text-gold truncate flex-1">{nextPlan.title}</span>
+        </div>
+      )}
+
+      {plans.length === 0 ? (
+        <div className="px-3 py-4 text-center text-mute text-[11px]">Chưa có kế hoạch. Thêm mới hoặc áp dụng thời khóa biểu.</div>
+      ) : (
+        <div className="divide-y divide-line/40">
+          {plans.map(p => (
+            <div key={p.id} className="px-2.5 py-2 group">
+              <div className="flex items-start gap-2.5">
+                <button onClick={() => { S.togglePlan(p.id); onChanged(); }} className={`w-7 h-7 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${p.done ? "bg-green border-green text-bg" : (p.priority || 0) >= 2 ? "border-red" : (p.priority || 0) >= 1 ? "border-gold" : "border-line hover:border-ink"}`}>
+                  {p.done && <Ic d={P.check} size={13} sw={3} />}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[12px] font-medium ${p.done ? "line-through text-mute" : ""}`}>{p.title}</span>
+                    {priorityBadge(p.priority || 0)}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-mute flex-wrap">
+                    {p.time && <span className="tnum">{p.time}</span>}
+                    {p.detail && <span className="truncate max-w-[150px]">{p.detail}</span>}
+                    <span>{ACTS.find(x => x.value === p.category)?.emoji}</span>
+                    {p.budget != null && p.budget > 0 && <span className="bg-red2 text-red border border-red/20 px-1 py-0.5 rounded font-semibold tnum">{fmtCurrency(p.budget)}</span>}
+                  </div>
+                  {/* Result note */}
+                  {p.done && p.result && <div className="mt-1 text-[10px] text-green bg-green2 border border-green/20 rounded px-1.5 py-0.5">✅ {p.result}</div>}
+                  {p.done && !p.result && resultId !== p.id && (
+                    <button onClick={() => { setResultId(p.id); setResultText(""); }} className="mt-1 text-[9px] text-mute hover:text-ink">+ Ghi kết quả</button>
+                  )}
+                  {resultId === p.id && (
+                    <div className="flex gap-1.5 mt-1">
+                      <input type="text" value={resultText} onChange={e => setResultText(e.target.value)} placeholder="Kết quả..." autoFocus className="flex-1 px-2 py-1 rounded-md bg-bg2 border border-line text-[10px] outline-none" />
+                      <button onClick={() => { S.updatePlanResult(p.id, resultText); setResultId(null); onChanged(); }} className="px-2 py-1 bg-ink text-bg rounded-md text-[9px] font-bold min-h-[28px]">Lưu</button>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => { S.deletePlan(p.id); onChanged(); }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-1"><Ic d={P.x} size={12} /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Footer: progress + budget */}
+      {plans.length > 0 && (
+        <div className="px-2.5 py-1.5 border-t border-line">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-mute">Tiến độ</span>
+            <span className="text-[10px] font-bold text-green tnum">{pct}%</span>
+          </div>
+          <div className="h-1.5 bg-bg2 rounded-full overflow-hidden">
+            <div className="h-full bg-green rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+          </div>
+          {totalBudget > 0 && (
+            <div className="flex items-center justify-between mt-1">
+              <span className="text-[10px] text-mute">Chi phí dự kiến</span>
+              <span className="text-[10px] font-bold text-red tnum">{fmtCurrency(totalBudget)}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function HistModal({ onClose, onPick, onChanged }: { onClose: () => void; onPick: (d: string) => void; onChanged: () => void }) {
