@@ -673,12 +673,17 @@ function RecentLog({ currentDate }: { currentDate: string }) {
         {days.map(day => {
           const cur = day.date === currentDate;
           const exp = day.expenses.reduce((s, e) => s + e.amount, 0);
-          // Combine all items into one line
-          const items: string[] = [];
-          day.liveTracks.forEach(t => items.push(`${gc(t.category)?.emoji || "⏱"} ${t.title}`));
-          day.meals.forEach(m => items.push(`🍽 ${m.foodName}${m.price ? " " + fmtCurrency(m.price) : ""}`));
-          day.activities.forEach(a => items.push(`$<CI cat={a.category} /> ${a.title}`));
-          day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).forEach(e => items.push(`💰 ${e.description} ${fmtCurrency(e.amount)}`));
+          // Combine: short summary per type
+          const parts: string[] = [];
+          if (day.meals.length > 0) parts.push(`${day.meals.length} bữa ăn`);
+          if (day.activities.length > 0) parts.push(`${day.activities.length} hoạt động`);
+          if (day.liveTracks.length > 0) parts.push(`${day.liveTracks.length} tracking`);
+          if (day.expenses.length > 0) parts.push(`${day.expenses.length} chi tiêu`);
+          // Top items by name
+          const topItems = [
+            ...day.meals.slice(0, 2).map(m => m.foodName),
+            ...day.activities.slice(0, 2).map(a => a.title),
+          ];
 
           return (
             <div key={day.date} className={`px-2.5 py-1.5 ${cur ? "bg-ink/5" : ""}`}>
@@ -689,7 +694,7 @@ function RecentLog({ currentDate }: { currentDate: string }) {
                 <span className="flex-1 h-px bg-line" />
                 {exp > 0 && <span className="text-[9px] text-red font-bold tnum">{fmtCurrency(exp)}</span>}
               </div>
-              <div className="text-[10px] text-mute leading-relaxed">{items.join(" · ")}</div>
+              <div className="text-[10px] text-mute leading-relaxed">{parts.join(" · ")}{topItems.length > 0 ? ` — ${topItems.join(", ")}` : ""}</div>
             </div>
           );
         })}
@@ -984,18 +989,33 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
   S.getMeals().forEach(m => dataDates.add(m.date));
   const sortedDates = Array.from(dataDates).sort();
 
-  // Check if enough data exists — look BACKWARD from viewed date
-  const allExpAll = S.getExpenses();
-  const firstDate = sortedDates.length > 0 ? sortedDates[0] : date;
-  const totalDays = Math.round((new Date(date + "T00:00:00").getTime() - new Date(firstDate + "T00:00:00").getTime()) / 86400000) + 1;
-  const canWeek = totalDays >= 7 || allExpAll.length >= 7;
-  const canMonth = totalDays >= 28 || allExpAll.length >= 20;
+  // Determine available date range from actual data
+  const dataFirst = sortedDates.length > 0 ? sortedDates[0] : date;
+  const dataLast = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : date;
+
+  // Week: 7 days ending at viewed date — only if first data date is at least 7 days before
+  const weekFrom = addDaysStr(date, -6);
+  const hasWeekData = sortedDates.some(d => d >= weekFrom && d <= date);
+  const canWeek = weekFrom >= dataFirst && hasWeekData;
+
+  // Month: viewed date's calendar month
+  const monthStart = date.slice(0, 7) + "-01";
+  const monthD = new Date(date + "T00:00:00");
+  const monthEnd = `${monthD.getFullYear()}-${String(monthD.getMonth() + 1).padStart(2, "0")}-${String(new Date(monthD.getFullYear(), monthD.getMonth() + 1, 0).getDate()).padStart(2, "0")}`;
+  const hasMonthData = sortedDates.some(d => d >= monthStart && d <= monthEnd);
+  const canMonth = hasMonthData && monthStart >= dataFirst;
 
   let from = date, to = date, rangeLabel = fmtDateFull(date), blocked = "";
 
   if (range === "day") { from = date; to = date; rangeLabel = fmtDateFull(date); }
-  else if (range === "week") { if (!canWeek) blocked = "Chưa đủ 7 ngày dữ liệu."; else { from = addDaysStr(date, -6); to = date; rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
-  else if (range === "month") { if (!canMonth) blocked = "Chưa đủ 1 tháng dữ liệu."; else { from = addDaysStr(date, -29); to = date; rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
+  else if (range === "week") {
+    if (!canWeek) blocked = "Tuần này chưa có dữ liệu.";
+    else { from = weekFrom; to = date; rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; }
+  }
+  else if (range === "month") {
+    if (!canMonth) blocked = "Tháng này chưa có dữ liệu.";
+    else { from = monthStart; to = monthEnd; rangeLabel = `Tháng ${monthD.getMonth() + 1}/${monthD.getFullYear()}`; }
+  }
   else { if (picked.size === 0) blocked = "Chọn ít nhất 1 ngày."; else { const arr = Array.from(picked).sort(); from = arr[0]; to = arr[arr.length - 1]; rangeLabel = arr.length === 1 ? fmtDateFull(from) : `${arr.length} ngày · ${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
 
   const allExps = blocked ? [] : range === "custom" ? S.getExpenses().filter(e => picked.has(e.date)) : range === "day" ? dayExps : S.getExpenses().filter(e => e.date >= from && e.date <= to);
