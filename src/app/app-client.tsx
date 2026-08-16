@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, type ReactNode } from "react"
 import {
   formatDate, fmtDateDisp, fmtDateFull, fmtCurrency, fmtDur, fmtTimeVN, fmtElapsed,
   getTimeOfDay, getTimeEmoji, nowHHMM, autoMealType, mealPeriod, parseMoney,
-  MEALS, ACTS, EXPS,
+  MEALS, ACTS, EXPS, CAT_ICONS,
 } from "@/lib/utils";
 import * as S from "@/lib/storage";
 import { migrateTimezone } from "@/lib/migrate";
@@ -13,6 +13,13 @@ import { migrateImages, resolveImage, saveImage } from "@/lib/imgdb";
 /* ═══ ICONS ═══ */
 function Ic({ d, size = 18, sw = 1.8, cls }: { d: string; size?: number; sw?: number; cls?: string }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" className={cls}><path d={d} /></svg>;
+}
+// Category icon — SVG if available, fallback to emoji
+function CI({ cat, size = 14 }: { cat: string; size?: number }) {
+  const icon = CAT_ICONS[cat];
+  if (icon) return <Ic d={icon} size={size} sw={1.6} cls="text-mute shrink-0" />;
+  const a = ACTS.find(x => x.value === cat) || EXPS.find(x => x.value === cat);
+  return <span className="shrink-0" style={{ fontSize: size * 0.85 }}>{a?.emoji || "•"}</span>;
 }
 const P = {
   plus: "M12 5v14M5 12h14", x: "M18 6 6 18M6 6l12 12", left: "m15 18-6-6 6-6", right: "m9 18 6-6-6-6", down: "m6 9 6 6 6-6",
@@ -266,10 +273,10 @@ export default function App() {
           })() : timerSetting ? (
             <div className="mt-1.5 bg-card rounded-lg border border-line p-2">
               <input type="text" value={timerLabel} onChange={e => setTimerLabel(e.target.value)} placeholder="Việc gì..." className="w-full px-2 py-1 rounded-md bg-bg2 border border-line text-xs outline-none focus:border-ink mb-1.5" />
-              <div className="flex gap-1 mb-1.5 overflow-x-auto">
+              <div className="grid grid-cols-5 gap-1 mb-1.5">
                 {[1, 3, 5, 10, 15, 25, 30, 45, 60, 90].map(m => (
                   <button key={m} onClick={() => setTimerCustom(String(m))}
-                    className={`shrink-0 px-2 py-1 rounded-md text-[10px] font-bold transition-all ${timerCustom === String(m) ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{m}p</button>
+                    className={`py-1.5 rounded-md text-[10px] font-bold transition-all min-h-[36px] ${timerCustom === String(m) ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{m}p</button>
                 ))}
               </div>
               <div className="flex gap-1.5 items-center">
@@ -335,7 +342,7 @@ export default function App() {
                   <div className="bg-card rounded-xl border border-green/30 p-2.5">
                     <div className="flex items-center gap-2.5">
                       <div className="relative w-9 h-9 rounded-lg bg-green/10 flex items-center justify-center text-lg shrink-0">
-                        {gc(live.category)?.emoji}<span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green border-2 border-card a-blink" />
+                        <CI cat={live.category} size={20} /><span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green border-2 border-card a-blink" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[9px] uppercase tracking-widest text-green font-bold">Đang track · {fmtTimeVN(live.startedAt)}</div>
@@ -345,14 +352,14 @@ export default function App() {
                     </div>
                     <div className="flex gap-1.5 mt-2">
                       <button onClick={() => { S.stopLiveTrack(); reload(); }} className="flex items-center gap-1.5 px-4 py-2 bg-red/15 border border-red/25 text-red rounded-md text-[11px] font-bold transition-colors active:scale-95 min-h-[40px]"><Ic d={P.stop} size={12} sw={2.5} /> Dừng</button>
-                      <div className="flex-1 flex gap-1 overflow-x-auto">{ACTS.filter(c => c.value !== live.category).slice(0, 5).map(c => (<button key={c.value} onClick={() => { S.startLiveTrack(c.label, c.value); reload(); }} className="shrink-0 w-7 h-7 rounded-md bg-bg2 hover:bg-line flex items-center justify-center text-xs transition-colors active:scale-90 border border-line">{c.emoji}</button>))}</div>
+                      <div className="flex-1 grid grid-cols-5 gap-1">{ACTS.filter(c => c.value !== live.category).slice(0, 5).map(c => (<button key={c.value} onClick={() => { S.startLiveTrack(c.label, c.value); reload(); }} className="h-9 rounded-md bg-bg2 hover:bg-line flex items-center justify-center transition-colors active:scale-90 border border-line"><CI cat={c.value} size={13} /></button>))}</div>
                     </div>
                   </div>
                 ) : (
                   <div className="bg-card rounded-xl p-2.5 border border-line">
                     <div className="text-[10px] text-mute mb-1.5 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-green a-blink" />Chọn để track:</div>
-                    <div className="flex gap-1 overflow-x-auto pb-0.5">
-                      {ACTS.map(c => (<button key={c.value} onClick={() => { S.startLiveTrack(c.label, c.value); reload(); }} className="shrink-0 flex items-center gap-1.5 bg-bg2 hover:bg-green/10 hover:text-green border border-line px-3 py-2 rounded-md text-[11px] transition-all active:scale-95 min-h-[40px]">{c.emoji} {c.label}</button>))}
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {ACTS.map(c => (<button key={c.value} onClick={() => { S.startLiveTrack(c.label, c.value); reload(); }} className="flex flex-col items-center gap-0.5 bg-bg2 hover:bg-green/10 hover:text-green border border-line py-2 rounded-lg text-[9px] font-medium transition-all active:scale-95 min-h-[48px]"><CI cat={c.value} size={16} />{c.label}</button>))}
                     </div>
                   </div>
                 )}
@@ -362,7 +369,7 @@ export default function App() {
                     {liveR.slice(0, 3).map(r => (
                       <div key={r.id} className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] group border-b border-line/40 last:border-0">
                         <button onClick={() => { S.startLiveTrack(r.title, r.category); reload(); }} className="text-mute2 hover:text-green"><Ic d={P.play} size={9} sw={2.5} /></button>
-                        <span className="text-xs">{gc(r.category)?.emoji}</span><span className="flex-1 truncate text-ink2">{r.title}</span>
+                        <span className="text-xs"><CI cat={r.category} /></span><span className="flex-1 truncate text-ink2">{r.title}</span>
                         <span className="text-[9px] text-mute tnum">{fmtTimeVN(r.startedAt)}</span>
                         {r.endedAt && <span className="text-[9px] bg-green2 text-green px-1 py-0.5 rounded font-semibold tnum">{fmtDur(Math.max(1, Math.round((new Date(r.endedAt).getTime() - new Date(r.startedAt).getTime()) / 60000)))}</span>}
                         <button onClick={() => { S.deleteLiveTrack(r.id); reload(); }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={10} /></button>
@@ -403,7 +410,7 @@ export default function App() {
             <Sec title="Hoạt động" icon={P.clip} count={acts.length} c={!!col.a} onT={() => tog("a")} onA={() => setModal("act")}>
               {acts.length === 0 ? <Em /> : acts.map(a => (
                 <div key={a.id} className="flex items-center gap-2 py-1 group">
-                  <span className="text-xs w-5 text-center shrink-0">{gc(a.category)?.emoji || "📋"}</span>
+                  <span className="text-xs w-5 text-center shrink-0"><CI cat={a.category} /></span>
                   <span className="text-[12px] font-medium flex-1 truncate">{a.title}</span>
                   {a.startTime && <span className="text-[10px] text-mute tnum shrink-0">{a.startTime}{a.endTime ? `–${a.endTime}` : ""}</span>}
                   {a.durationMinutes != null && a.durationMinutes > 0 && <span className="text-[10px] bg-blue2 text-blue px-1 py-0.5 rounded font-semibold tnum border border-blue/20 shrink-0">{fmtDur(a.durationMinutes)}</span>}
@@ -503,7 +510,7 @@ export default function App() {
                 <div className="space-y-0.5">
                   {exps.map(e => { const eImg = getImg(e.id, e.image); return (<div key={e.id} className="flex items-start gap-2 py-1 group">
                     {eImg ? <button onClick={() => setImg(eImg)} className="w-8 h-8 rounded-md overflow-hidden shrink-0 ring-1 ring-line"><img src={eImg} alt="" className="w-full h-full object-cover" /></button>
-                    : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0">{ge(e.category)?.emoji || "📦"}</span>}
+                    : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0"><CI cat={e.category} /></span>}
                     <div className="flex-1 min-w-0"><div className="text-[12px] font-medium truncate">{e.description}</div><div className="text-[10px] text-mute">{fmtTimeVN(e.createdAt)} · {ge(e.category)?.label}</div></div>
                     <span className="font-bold text-[11px] text-red tnum shrink-0">−{fmtCurrency(e.amount)}</span>
                     <button onClick={() => del("e", e.id)} className="mt-1 text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
@@ -648,46 +655,45 @@ function playAlarm() {
   } catch { /* blocked */ }
 }
 
-/* ═══ RECENT LOG — compact 1-line per day ═══ */
+/* ═══ RECENT LOG — always expanded, no click needed ═══ */
 function RecentLog({ currentDate }: { currentDate: string }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const logs = S.getRecentDayLogs(10);
+  const logs = S.getRecentDayLogs(7);
   const days = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0 || l.liveTracks.length > 0);
   if (days.length <= 1) return null;
+
+  const gc = (v: string) => ACTS.find(x => x.value === v);
 
   return (
     <div className="bg-card rounded-lg border border-line overflow-hidden a-rise">
       <div className="px-2.5 py-1.5 border-b border-line flex items-center justify-between">
-        <span className="font-bold text-[11px]">Nhật ký</span>
+        <span className="font-bold text-[11px]">Nhật ký gần đây</span>
         <span className="text-[9px] text-mute tnum">{days.length} ngày</span>
       </div>
-      {days.map(day => {
-        const cur = day.date === currentDate;
-        const exp = day.expenses.reduce((s, e) => s + e.amount, 0);
-        const isOpen = open === day.date;
-        return (
-          <div key={day.date} className={`border-b border-line/40 last:border-0 ${cur ? "bg-ink/5" : ""}`}>
-            <button onClick={() => setOpen(isOpen ? null : day.date)} className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left">
-              <span className={`text-[10px] font-bold tnum shrink-0 w-10 ${cur ? "text-ink" : "text-mute"}`}>{new Date(day.date + "T00:00:00").getDate()}/{new Date(day.date + "T00:00:00").getMonth() + 1}</span>
-              <span className="flex-1 flex gap-1.5 overflow-hidden">
-                {day.meals.length > 0 && <span className="text-[9px] text-mute shrink-0">🍽{day.meals.length}</span>}
-                {day.activities.length > 0 && <span className="text-[9px] text-mute shrink-0">📋{day.activities.length}</span>}
-                {day.liveTracks.length > 0 && <span className="text-[9px] text-mute shrink-0">⏱{day.liveTracks.length}</span>}
-              </span>
-              {exp > 0 && <span className="text-[9px] text-red font-bold tnum shrink-0">{fmtCurrency(exp)}</span>}
-              <Ic d={P.down} size={10} cls={`text-mute2 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} />
-            </button>
-            {isOpen && (
-              <div className="px-2.5 pb-1.5 space-y-0.5">
-                {day.liveTracks.map(t => <div key={t.id} className="text-[10px] text-mute pl-10">⏱ {t.title}</div>)}
-                {day.meals.map(m => <div key={m.id} className="text-[10px] text-mute pl-10">🍽 {m.foodName}{m.price ? ` · ${fmtCurrency(m.price)}` : ""}</div>)}
-                {day.activities.map(a => <div key={a.id} className="text-[10px] text-mute pl-10">{ACTS.find(x => x.value === a.category)?.emoji || "📋"} {a.title}{a.durationMinutes ? ` · ${fmtDur(a.durationMinutes)}` : ""}</div>)}
-                {day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).map(e => <div key={e.id} className="text-[10px] text-mute pl-10">{EXPS.find(x => x.value === e.category)?.emoji || "💰"} {e.description} · {fmtCurrency(e.amount)}</div>)}
+      <div className="divide-y divide-line/30">
+        {days.map(day => {
+          const cur = day.date === currentDate;
+          const exp = day.expenses.reduce((s, e) => s + e.amount, 0);
+          // Combine all items into one line
+          const items: string[] = [];
+          day.liveTracks.forEach(t => items.push(`${gc(t.category)?.emoji || "⏱"} ${t.title}`));
+          day.meals.forEach(m => items.push(`🍽 ${m.foodName}${m.price ? " " + fmtCurrency(m.price) : ""}`));
+          day.activities.forEach(a => items.push(`$<CI cat={a.category} /> ${a.title}`));
+          day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).forEach(e => items.push(`💰 ${e.description} ${fmtCurrency(e.amount)}`));
+
+          return (
+            <div key={day.date} className={`px-2.5 py-1.5 ${cur ? "bg-ink/5" : ""}`}>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className={`text-[10px] font-bold tnum ${cur ? "text-ink" : "text-mute"}`}>
+                  {new Date(day.date + "T00:00:00").getDate()}/{new Date(day.date + "T00:00:00").getMonth() + 1}
+                </span>
+                <span className="flex-1 h-px bg-line" />
+                {exp > 0 && <span className="text-[9px] text-red font-bold tnum">{fmtCurrency(exp)}</span>}
               </div>
-            )}
-          </div>
-        );
-      })}
+              <div className="text-[10px] text-mute leading-relaxed">{items.join(" · ")}</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -978,15 +984,18 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
   S.getMeals().forEach(m => dataDates.add(m.date));
   const sortedDates = Array.from(dataDates).sort();
 
-  const datesFromView = sortedDates.filter(d => d >= date);
-  const canWeek = datesFromView.length >= 7 || (datesFromView.length > 0 && Math.round((new Date(datesFromView[datesFromView.length - 1] + "T00:00:00").getTime() - new Date(date + "T00:00:00").getTime()) / 86400000) >= 6);
-  const canMonth = datesFromView.length > 0 && Math.round((new Date(datesFromView[datesFromView.length - 1] + "T00:00:00").getTime() - new Date(date + "T00:00:00").getTime()) / 86400000) >= 27;
+  // Check if enough data exists — look BACKWARD from viewed date
+  const allExpAll = S.getExpenses();
+  const firstDate = sortedDates.length > 0 ? sortedDates[0] : date;
+  const totalDays = Math.round((new Date(date + "T00:00:00").getTime() - new Date(firstDate + "T00:00:00").getTime()) / 86400000) + 1;
+  const canWeek = totalDays >= 7 || allExpAll.length >= 7;
+  const canMonth = totalDays >= 28 || allExpAll.length >= 20;
 
   let from = date, to = date, rangeLabel = fmtDateFull(date), blocked = "";
 
   if (range === "day") { from = date; to = date; rangeLabel = fmtDateFull(date); }
-  else if (range === "week") { if (!canWeek) blocked = "Chưa đủ 7 ngày dữ liệu."; else { from = date; to = addDaysStr(date, 6); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
-  else if (range === "month") { if (!canMonth) blocked = "Chưa đủ 1 tháng dữ liệu."; else { from = date; to = addDaysStr(date, 29); rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
+  else if (range === "week") { if (!canWeek) blocked = "Chưa đủ 7 ngày dữ liệu."; else { from = addDaysStr(date, -6); to = date; rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
+  else if (range === "month") { if (!canMonth) blocked = "Chưa đủ 1 tháng dữ liệu."; else { from = addDaysStr(date, -29); to = date; rangeLabel = `${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
   else { if (picked.size === 0) blocked = "Chọn ít nhất 1 ngày."; else { const arr = Array.from(picked).sort(); from = arr[0]; to = arr[arr.length - 1]; rangeLabel = arr.length === 1 ? fmtDateFull(from) : `${arr.length} ngày · ${fmtDateDisp(from)} → ${fmtDateDisp(to)}`; } }
 
   const allExps = blocked ? [] : range === "custom" ? S.getExpenses().filter(e => picked.has(e.date)) : range === "day" ? dayExps : S.getExpenses().filter(e => e.date >= from && e.date <= to);
@@ -1000,80 +1009,108 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
   const toggleDate = (d: string) => { const n = new Set(picked); if (n.has(d)) n.delete(d); else n.add(d); setPicked(n); };
 
   const downloadInvoice = () => {
-    const W = 640, M = 40, LH = 26;
+    const W = 700, M = 48, LH = 28;
     const cv = document.createElement("canvas"); const cx = cv.getContext("2d")!;
-    cv.width = W; cv.height = 6000;
-    cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, W, 6000);
+    cv.width = W; cv.height = 8000;
+    // Cream background
+    cx.fillStyle = "#fdf9f3"; cx.fillRect(0, 0, W, 8000);
 
-    let y = 20;
-    // Top accent
-    cx.fillStyle = "#1a1a1a"; cx.fillRect(0, 0, W, 5);
+    let y = 0;
+    // Top gold bar
+    cx.fillStyle = "#d4a843"; cx.fillRect(0, 0, W, 6);
+    y = 40;
 
-    // Header
+    // Logo area
     cx.textAlign = "center";
-    cx.font = "bold 28px sans-serif"; cx.fillStyle = "#1a1a1a";
-    cx.fillText("JAY TRACKER", W / 2, y + 6); y += 30;
-    cx.font = "600 14px sans-serif"; cx.fillStyle = "#666666";
-    cx.fillText("HÓA ĐƠN CHI TIÊU", W / 2, y); y += 22;
-    cx.font = "13px sans-serif"; cx.fillStyle = "#888888";
-    cx.fillText(rangeLabel, W / 2, y); y += 24;
+    cx.font = "bold 32px sans-serif"; cx.fillStyle = "#1a1a1a";
+    cx.fillText("JAY TRACKER", W / 2, y); y += 24;
+    cx.font = "14px sans-serif"; cx.fillStyle = "#8a7a5a";
+    cx.fillText("━━━ HÓA ĐƠN CHI TIÊU ━━━", W / 2, y); y += 24;
+    cx.font = "13px sans-serif"; cx.fillStyle = "#666666";
+    cx.fillText(rangeLabel, W / 2, y); y += 12;
+    cx.fillText(`${count} khoản chi`, W / 2, y); y += 24;
 
-    // Thick line
-    cx.strokeStyle = "#1a1a1a"; cx.lineWidth = 2;
-    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 14;
+    // Gold line
+    cx.fillStyle = "#d4a843"; cx.fillRect(M, y, W - 2 * M, 2); y += 16;
 
     // Column headers
-    cx.textAlign = "left"; cx.font = "bold 10px sans-serif"; cx.fillStyle = "#aaaaaa";
-    cx.fillText("STT", M, y); cx.fillText("MÔ TẢ", M + 34, y);
-    cx.textAlign = "right"; cx.fillText("THÀNH TIỀN", W - M, y);
-    cx.textAlign = "left"; y += 4;
-    cx.strokeStyle = "#dddddd"; cx.lineWidth = 0.5;
-    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 10;
+    cx.textAlign = "left"; cx.font = "bold 11px sans-serif"; cx.fillStyle = "#8a7a5a";
+    cx.fillText("#", M, y); cx.fillText("Mô tả", M + 30, y); cx.fillText("Loại", W - M - 130, y);
+    cx.textAlign = "right"; cx.fillText("Số tiền", W - M, y);
+    cx.textAlign = "left"; y += 6;
+    cx.fillStyle = "#e8dcc8"; cx.fillRect(M, y, W - 2 * M, 1); y += 12;
 
     let no = 0;
     dateKeys.forEach((dk, di) => {
       const items = byDate[dk]; const dayTotal = items.reduce((s, e) => s + e.amount, 0);
+      // Day header
       if (isMultiDay) {
-        if (di > 0) y += 4;
-        cx.fillStyle = "#f5f5f5"; cx.fillRect(0, y - 2, W, 24);
-        cx.font = "bold 12px sans-serif"; cx.fillStyle = "#333333"; cx.fillText(fmtDateDisp(dk), M, y + 14);
-        cx.textAlign = "right"; cx.fillStyle = "#cc0000"; cx.font = "bold 12px sans-serif"; cx.fillText(fmtCurrency(dayTotal), W - M, y + 14);
-        cx.textAlign = "left"; y += 28;
+        if (di > 0) y += 6;
+        cx.fillStyle = "#f0e8d8"; cx.fillRect(M - 8, y - 4, W - 2 * M + 16, 30);
+        // Left: date
+        cx.font = "bold 13px sans-serif"; cx.fillStyle = "#4a3f2a";
+        cx.fillText("▸ " + fmtDateDisp(dk), M + 4, y + 16);
+        // Right: day total
+        cx.textAlign = "right"; cx.fillStyle = "#b44"; cx.font = "bold 13px sans-serif";
+        cx.fillText(fmtCurrency(dayTotal), W - M - 4, y + 16);
+        cx.textAlign = "left"; y += 36;
       }
+      // Items
       items.forEach(it => {
         no++;
         const ec = EXPS.find(x => x.value === it.category);
-        if (no % 2 === 0) { cx.fillStyle = "#fafafa"; cx.fillRect(M - 4, y - 3, W - 2 * M + 8, LH); }
-        cx.font = "11px sans-serif"; cx.fillStyle = "#cccccc"; cx.fillText(String(no).padStart(2, "0"), M, y + 14);
-        cx.font = "13px sans-serif"; cx.fillStyle = "#222222";
-        const desc = (ec?.emoji || "") + " " + it.description;
-        cx.fillText(desc.length > 36 ? desc.slice(0, 34) + "..." : desc, M + 34, y + 14);
-        cx.textAlign = "right"; cx.font = "13px sans-serif"; cx.fillStyle = "#333333"; cx.fillText(fmtCurrency(it.amount), W - M, y + 14);
-        cx.textAlign = "left"; y += LH;
+        // Zebra
+        if (no % 2 === 0) { cx.fillStyle = "#f8f4ec"; cx.fillRect(M - 4, y - 4, W - 2 * M + 8, LH); }
+        // Number
+        cx.font = "11px sans-serif"; cx.fillStyle = "#bbb0a0";
+        cx.fillText(String(no).padStart(2, "0"), M, y + 16);
+        // Description
+        cx.font = "14px sans-serif"; cx.fillStyle = "#2a2a2a";
+        const desc = it.description;
+        cx.fillText(desc.length > 28 ? desc.slice(0, 26) + "…" : desc, M + 30, y + 16);
+        // Category
+        cx.font = "11px sans-serif"; cx.fillStyle = "#8a7a5a";
+        cx.fillText(ec?.label || "", W - M - 130, y + 16);
+        // Amount
+        cx.textAlign = "right"; cx.font = "bold 13px sans-serif"; cx.fillStyle = "#333333";
+        cx.fillText(fmtCurrency(it.amount), W - M, y + 16);
+        cx.textAlign = "left";
+        y += LH;
       });
+      // Day separator
+      if (isMultiDay) {
+        cx.fillStyle = "#e8dcc8"; cx.fillRect(M, y + 2, W - 2 * M, 1); y += 8;
+      }
     });
 
-    // Total
-    y += 10;
-    cx.strokeStyle = "#1a1a1a"; cx.lineWidth = 2;
-    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 5;
-    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 18;
-    cx.font = "bold 16px sans-serif"; cx.fillStyle = "#1a1a1a"; cx.fillText("TỔNG CỘNG", M, y);
-    cx.font = "11px sans-serif"; cx.fillStyle = "#999999"; cx.fillText("(" + count + " khoản)", M + 105, y);
-    cx.textAlign = "right"; cx.font = "bold 28px sans-serif"; cx.fillStyle = "#cc0000"; cx.fillText(fmtCurrency(total), W - M, y + 2);
-    cx.textAlign = "left"; y += 36;
+    // Total section
+    y += 12;
+    cx.fillStyle = "#d4a843"; cx.fillRect(M, y, W - 2 * M, 2); y += 4;
+    cx.fillStyle = "#d4a843"; cx.fillRect(M, y, W - 2 * M, 2); y += 20;
+
+    // Total row
+    cx.fillStyle = "#f0e8d8"; cx.fillRect(M - 8, y - 8, W - 2 * M + 16, 44);
+    cx.font = "bold 18px sans-serif"; cx.fillStyle = "#1a1a1a";
+    cx.fillText("TỔNG CỘNG", M + 4, y + 16);
+    cx.textAlign = "right";
+    cx.font = "bold 32px sans-serif"; cx.fillStyle = "#b44";
+    cx.fillText(fmtCurrency(total), W - M - 4, y + 20);
+    cx.textAlign = "left"; y += 52;
 
     // Footer
-    cx.strokeStyle = "#eeeeee"; cx.lineWidth = 0.5;
-    cx.beginPath(); cx.moveTo(M, y); cx.lineTo(W - M, y); cx.stroke(); y += 14;
-    cx.textAlign = "center"; cx.font = "11px sans-serif"; cx.fillStyle = "#cccccc";
-    cx.fillText(rangeLabel + "  •  Jay Tracker", W / 2, y); y += 18;
-    cx.fillStyle = "#1a1a1a"; cx.fillRect(0, y, W, 5); y += 12;
+    cx.fillStyle = "#e8dcc8"; cx.fillRect(M, y, W - 2 * M, 1); y += 16;
+    cx.textAlign = "center"; cx.font = "12px sans-serif"; cx.fillStyle = "#aaa090";
+    cx.fillText(rangeLabel, W / 2, y); y += 16;
+    cx.font = "bold 12px sans-serif"; cx.fillStyle = "#8a7a5a";
+    cx.fillText("Jay Tracker", W / 2, y); y += 24;
 
-    // Crop & download via blob (works on iPhone)
+    // Bottom gold bar
+    cx.fillStyle = "#d4a843"; cx.fillRect(0, y, W, 6); y += 12;
+
+    // Crop & download
     const out = document.createElement("canvas"); out.width = W; out.height = y;
     const ox = out.getContext("2d")!;
-    ox.fillStyle = "#ffffff"; ox.fillRect(0, 0, W, y);
+    ox.fillStyle = "#fdf9f3"; ox.fillRect(0, 0, W, y);
     ox.drawImage(cv, 0, 0);
 
     out.toBlob(blob => {
@@ -1148,55 +1185,89 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
   const [priority, setPriority] = useState(0);
   const [budgetStr, setBudgetStr] = useState("");
   const budgetParsed = parseMoney(budgetStr);
+
+  const allCats = [...ACTS, ...EXPS.filter(e => !ACTS.some(a => a.value === e.value))];
+  const quickPlans = [
+    { t: "Ăn sáng", c: "eat", time: "07:00" },
+    { t: "Ăn trưa", c: "eat", time: "12:00" },
+    { t: "Ăn tối", c: "eat", time: "18:00" },
+    { t: "Tập gym", c: "exercise", time: "10:00" },
+    { t: "Làm việc", c: "work", time: "08:00" },
+    { t: "Học bài", c: "study", time: "20:00" },
+    { t: "Đi chợ", c: "chores", time: "20:00" },
+    { t: "Nghỉ ngơi", c: "rest", time: "22:00" },
+  ];
+
   return (<Wrap title="Thêm kế hoạch" onClose={onClose}>
-    <div className="flex flex-wrap gap-1.5 mb-2">{ACTS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold min-h-[36px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{c.emoji} {c.label}</button>))}</div>
+    {/* Quick add */}
+    <div className="text-[9px] text-mute2 font-bold uppercase tracking-widest mb-1">Thêm nhanh:</div>
+    <div className="grid grid-cols-4 gap-1.5 mb-2.5">
+      {quickPlans.map(q => (
+        <button type="button" key={q.t} onClick={() => { S.addPlan({ date, time: q.time, title: q.t, detail: null, category: q.c, priority: 0, budget: null }); onDone(); }}
+          className="flex flex-col items-center gap-0.5 py-2 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[48px] active:scale-95 hover:border-ink transition-all">
+          <CI cat={q.c} size={16} /><span>{q.t}</span><span className="text-[8px] text-mute font-normal tnum">{q.time}</span>
+        </button>
+      ))}
+    </div>
+
+    <div className="text-[9px] text-mute2 font-bold uppercase tracking-widest mb-1">Hoặc tự nhập:</div>
+    <div className="flex flex-wrap gap-1.5 mb-2">{allCats.slice(0, 10).map(c => (<button type="button" key={c.value} onClick={() => setCat(c.value)} className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold min-h-[36px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{c.emoji} {c.label}</button>))}</div>
     <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề" autoFocus className={`${ic} mb-2`} />
     <input type="text" value={detail} onChange={e => setDetail(e.target.value)} placeholder="Chi tiết / mục tiêu" className={`${ic} mb-2`} />
     <div className="flex gap-2 mb-2">
-      <input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} flex-1`} />
+      <input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} flex-1 min-h-[44px]`} />
       <div className="flex-1"><MoneyIn value={budgetStr} onChange={setBudgetStr} placeholder="Chi phí dự kiến" /></div>
     </div>
     <div className="flex gap-1.5 mb-2.5">
-      <span className="text-[10px] text-mute self-center shrink-0">Mức độ:</span>
       {[{ v: 0, l: "Bình thường", c: "border-line text-mute" }, { v: 1, l: "⚠️ Quan trọng", c: "border-gold/40 text-gold" }, { v: 2, l: "🔴 Gấp", c: "border-red/40 text-red" }].map(p => (
-        <button key={p.v} onClick={() => setPriority(p.v)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold min-h-[36px] transition-all border ${priority === p.v ? "bg-ink text-bg border-ink" : `bg-bg2 ${p.c}`}`}>{p.l}</button>
+        <button type="button" key={p.v} onClick={() => setPriority(p.v)} className={`flex-1 py-2 rounded-md text-[10px] font-bold min-h-[40px] transition-all border ${priority === p.v ? "bg-ink text-bg border-ink" : `bg-bg2 ${p.c}`}`}>{p.l}</button>
       ))}
     </div>
-    <button onClick={() => { if (!title.trim()) return; S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed }); onDone(); }} disabled={!title.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
+    <button type="button" onClick={() => { if (!title.trim()) return; S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed }); onDone(); }} disabled={!title.trim()} className="w-full py-3 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-sm">Thêm kế hoạch</button>
   </Wrap>);
 }
 
 /* ═══ ADD SCHEDULE TEMPLATE MODAL ═══ */
 function AddScheduleModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
   const [name, setName] = useState("");
-  const [blocks, setBlocks] = useState<S.ScheduleBlock[]>([{ time: "06:00", endTime: "07:00", title: "", category: "exercise" }]);
+  const [blocks, setBlocks] = useState<S.ScheduleBlock[]>([
+    { time: "06:00", endTime: "07:00", title: "Tập luyện", category: "exercise" },
+    { time: "07:00", endTime: "07:30", title: "Ăn sáng", category: "eat" },
+    { time: "08:00", endTime: "12:00", title: "Làm việc", category: "work" },
+  ]);
 
-  const addBlock = () => setBlocks([...blocks, { time: "", endTime: "", title: "", category: "work" }]);
+  const addBlock = () => {
+    const lastTime = blocks.length > 0 ? blocks[blocks.length - 1].endTime || blocks[blocks.length - 1].time : "08:00";
+    setBlocks([...blocks, { time: lastTime, endTime: "", title: "", category: "work" }]);
+  };
   const removeBlock = (i: number) => setBlocks(blocks.filter((_, idx) => idx !== i));
   const updateBlock = (i: number, field: keyof S.ScheduleBlock, val: string) => {
     const nb = [...blocks]; (nb[i] as unknown as Record<string, string>)[field] = val; setBlocks(nb);
   };
 
+  const allCats = [...ACTS, ...EXPS.filter(e => !ACTS.some(a => a.value === e.value))];
+  const canSave = name.trim() && blocks.some(b => b.title.trim());
+
   return (<Wrap title="Tạo thời khóa biểu" onClose={onClose}>
-    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên (Gym, Làm việc, Cuối tuần...)" autoFocus className={`${ic} mb-2.5`} />
+    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên thời khóa biểu" autoFocus className={`${ic} mb-2.5`} />
     <div className="space-y-2 mb-2.5 max-h-[40vh] overflow-y-auto">
       {blocks.map((b, i) => (
         <div key={i} className="bg-bg2 rounded-lg p-2 border border-line space-y-1.5">
-          <div className="flex gap-1.5">
-            <input type="time" value={b.time} onChange={e => updateBlock(i, "time", e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
-            <span className="text-mute self-center text-[10px]">→</span>
-            <input type="time" value={b.endTime || ""} onChange={e => updateBlock(i, "endTime", e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
-            <button onClick={() => removeBlock(i)} className="text-mute2 hover:text-red shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center"><Ic d={P.x} size={12} /></button>
+          <div className="flex gap-1.5 items-center">
+            <input type="time" value={b.time} onChange={e => updateBlock(i, "time", e.target.value)} className="flex-1 px-2 py-2 rounded-md bg-card border border-line text-xs outline-none min-h-[40px]" />
+            <span className="text-mute text-[10px]">→</span>
+            <input type="time" value={b.endTime || ""} onChange={e => updateBlock(i, "endTime", e.target.value)} className="flex-1 px-2 py-2 rounded-md bg-card border border-line text-xs outline-none min-h-[40px]" />
+            <button type="button" onClick={() => removeBlock(i)} className="text-mute2 hover:text-red min-w-[40px] min-h-[40px] flex items-center justify-center rounded-md bg-card border border-line"><Ic d={P.x} size={14} /></button>
           </div>
-          <input type="text" value={b.title} onChange={e => updateBlock(i, "title", e.target.value)} placeholder="Nội dung" className="w-full px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
-          <div className="flex gap-1 overflow-x-auto">
-            {ACTS.slice(0, 6).map(c => (<button key={c.value} onClick={() => updateBlock(i, "category", c.value)} className={`shrink-0 px-1.5 py-1 rounded text-[9px] font-bold ${b.category === c.value ? "bg-ink text-bg" : "bg-card text-mute border border-line"}`}>{c.emoji}</button>))}
+          <input type="text" value={b.title} onChange={e => updateBlock(i, "title", e.target.value)} placeholder="Hoạt động" className="w-full px-2 py-2 rounded-md bg-card border border-line text-xs outline-none min-h-[40px]" />
+          <div className="grid grid-cols-5 gap-1">
+            {allCats.slice(0, 10).map(c => (<button type="button" key={c.value} onClick={() => updateBlock(i, "category", c.value)} className={`flex flex-col items-center py-1.5 rounded-md text-[8px] font-bold min-h-[36px] ${b.category === c.value ? "bg-ink text-bg" : "bg-card text-mute border border-line"}`}><CI cat={c.value} size={12} />{c.label}</button>))}
           </div>
         </div>
       ))}
     </div>
-    <button onClick={addBlock} className="w-full py-2 border border-dashed border-line rounded-lg text-[10px] text-mute hover:text-ink hover:border-ink font-bold mb-2.5">+ Thêm khung giờ</button>
-    <button onClick={() => { if (!name.trim() || blocks.length === 0) return; S.addSchedule(name.trim(), blocks.filter(b => b.title.trim())); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Lưu thời khóa biểu</button>
+    <button type="button" onClick={addBlock} className="w-full py-2.5 border border-dashed border-line rounded-lg text-[10px] text-mute hover:text-ink hover:border-ink font-bold mb-2.5 min-h-[44px]">+ Thêm khung giờ</button>
+    <button type="button" onClick={() => { if (!canSave) return; S.addSchedule(name.trim(), blocks.filter(b => b.time || b.title.trim())); onDone(); }} disabled={!canSave} className="w-full py-3 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-sm">Lưu thời khóa biểu</button>
   </Wrap>);
 }
 
@@ -1210,7 +1281,7 @@ function ScheduleSection({ date, onApply }: { date: string; onApply: () => void 
       <div className="flex items-center px-2.5 py-2 gap-2 border-b border-line">
         <span className="w-6 h-6 rounded-md bg-bg2 border border-line flex items-center justify-center text-mute shrink-0"><Ic d={P.clock} size={12} /></span>
         <span className="font-bold text-xs flex-1">Thời khóa biểu</span>
-        <button onClick={() => setModal(true)} className="w-7 h-7 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90"><Ic d={P.plus} size={13} sw={2.5} /></button>
+        <button onClick={() => setModal(true)} className="w-8 h-8 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90"><Ic d={P.plus} size={14} sw={2.5} /></button>
       </div>
       {schedules.length === 0 ? (
         <div className="px-3 py-3 text-center text-mute text-[11px]">Tạo thời khóa biểu mẫu (Gym, Làm việc...) rồi áp dụng nhanh cho bất kỳ ngày nào.</div>
@@ -1222,8 +1293,8 @@ function ScheduleSection({ date, onApply }: { date: string; onApply: () => void 
                 <div className="text-[12px] font-medium">{s.name}</div>
                 <div className="text-[10px] text-mute">{s.items.length} khung giờ · {s.items.map(b => b.time).join(", ")}</div>
               </div>
-              <button onClick={() => { S.applySchedule(s.id, date); onApply(); }} className="px-3 py-1.5 bg-green2 border border-green/20 text-green rounded-md text-[10px] font-bold min-h-[36px] transition-colors active:scale-95">Áp dụng</button>
-              <button onClick={() => { if (confirm("Xóa?")) { S.deleteSchedule(s.id); onApply(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 min-w-[32px] min-h-[32px] flex items-center justify-center"><Ic d={P.x} size={12} /></button>
+              <button onClick={() => { S.applySchedule(s.id, date); onApply(); }} className="px-4 py-2 bg-green2 border border-green/20 text-green rounded-md text-[10px] font-bold min-h-[40px] transition-colors active:scale-95">Áp dụng</button>
+              <button onClick={() => { if (confirm("Xóa?")) { S.deleteSchedule(s.id); onApply(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 min-w-[40px] min-h-[40px] flex items-center justify-center"><Ic d={P.x} size={14} /></button>
             </div>
           ))}
         </div>
@@ -1240,10 +1311,10 @@ function CopyPlansSection({ currentDate, onCopy }: { currentDate: string; onCopy
   return (
     <div className="bg-card rounded-lg border border-line p-2.5">
       <div className="text-[10px] text-mute font-bold mb-1.5">Sao chép kế hoạch từ ngày khác:</div>
-      <div className="flex gap-1.5 overflow-x-auto">
+      <div className="grid grid-cols-4 gap-1.5">
         {dates.slice(0, 8).map(d => (
           <button key={d} onClick={() => { S.copyPlans(d, currentDate); onCopy(); }}
-            className="shrink-0 px-3 py-2 bg-bg2 border border-line rounded-lg text-[10px] font-bold tnum min-h-[40px] hover:border-ink active:scale-95 transition-all">
+            className="py-2 bg-bg2 border border-line rounded-lg text-[10px] font-bold tnum min-h-[44px] hover:border-ink active:scale-95 transition-all text-center">
             {new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
             <div className="text-[8px] text-mute font-normal">{S.getPlans(d).length} mục</div>
           </button>
