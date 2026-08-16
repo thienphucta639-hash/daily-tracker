@@ -5,6 +5,8 @@ const withPWA = withPWAInit({
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
+  register: true,      // MỚI THÊM: Tự động đăng ký PWA
+  skipWaiting: true,   // MỚI THÊM: Bỏ qua thời gian chờ, ép cập nhật bản offline ngay
   disable: process.env.NODE_ENV === "development",
   workboxOptions: {
     disableDevLogs: true,
