@@ -1,10 +1,12 @@
-const withPWA = require("@ducanh2912/next-pwa").default({
+import withPWAInit from "@ducanh2912/next-pwa";
+
+const withPWA = withPWAInit({
   dest: "public",
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
   swcMinify: true,
-  disable: process.env.NODE_ENV === "development", // Tắt PWA khi đang code để tránh lỗi cache, chỉ bật khi deploy
+  disable: process.env.NODE_ENV === "development",
   workboxOptions: {
     disableDevLogs: true,
   },
@@ -12,8 +14,7 @@ const withPWA = require("@ducanh2912/next-pwa").default({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Nếu trước đó file next.config của bạn có code gì ở trong, hãy dán lại vào khu vực này
   reactStrictMode: true,
 };
 
-module.exports = withPWA(nextConfig);
+export default withPWA(nextConfig);
