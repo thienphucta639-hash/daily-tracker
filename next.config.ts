@@ -15,6 +15,10 @@ const withPWA = withPWAInit({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Tắt Turbopack mặc định của Next.js 16 để tránh xung đột với PWA
+  webpack: (config) => {
+    return config;
+  },
 };
 
 export default withPWA(nextConfig);
