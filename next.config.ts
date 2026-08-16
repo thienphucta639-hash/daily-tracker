@@ -15,10 +15,8 @@ const withPWA = withPWAInit({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Tắt Turbopack mặc định của Next.js 16 để tránh xung đột với PWA
-  webpack: (config) => {
-    return config;
-  },
+  // Dòng này làm theo đúng yêu cầu của Vercel để tắt lỗi Turbopack
+  turbopack: {},
 };
 
 export default withPWA(nextConfig);
