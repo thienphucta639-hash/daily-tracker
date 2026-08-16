@@ -13,6 +13,12 @@ const font = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Jay Tracker",
   description: "daily activity tracker by Jay",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Jay Tracker",
+  },
 };
 
 export const viewport: Viewport = {
