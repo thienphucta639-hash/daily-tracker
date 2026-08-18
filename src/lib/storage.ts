@@ -10,6 +10,9 @@ export interface Meal {
   mealType: string;
   foodName: string;
   calories: number | null;
+  protein: number | null; // grams
+  fat: number | null; // grams
+  carbs: number | null; // grams
   notes: string | null;
   time: string | null;
   image: string | null;
@@ -217,6 +220,21 @@ export function deleteHabit(id: string) {
   save("t_habits", load<Habit>("t_habits").filter(h => h.id !== id));
   save("t_habit_checks", load<HabitCheck>("t_habit_checks").filter(c => c.habitId !== id));
 }
+export function postponeHabit(id: string, fromDate: string) {
+  // Move habit to next day
+  const all = load<Habit>("t_habits");
+  const h = all.find(x => x.id === id);
+  if (!h) return;
+  const next = new Date(fromDate + "T00:00:00");
+  next.setDate(next.getDate() + 1);
+  // Create copy for tomorrow
+  const n: Habit = { id: uid(), name: h.name, emoji: h.emoji, description: h.description, date: formatDate(next), createdAt: new Date().toISOString() };
+  all.push(n);
+  // Remove from today
+  const idx = all.indexOf(h);
+  if (idx >= 0) all.splice(idx, 1);
+  save("t_habits", all);
+}
 export function getHabitChecks(date: string): HabitCheck[] {
   return load<HabitCheck>("t_habit_checks").filter(c => c.date === date);
 }
@@ -247,6 +265,12 @@ export function addQuickNote(date: string, text: string): QuickNote {
   all.push(n); save("t_qnotes", all); return n;
 }
 export function deleteQuickNote(id: string) { save("t_qnotes", load<QuickNote>("t_qnotes").filter(n => n.id !== id)); }
+export function editQuickNote(id: string, newText: string) {
+  const all = load<QuickNote>("t_qnotes");
+  const n = all.find(x => x.id === id);
+  if (n) n.text = newText;
+  save("t_qnotes", all);
+}
 export function togglePinNote(id: string) {
   const all = load<QuickNote>("t_qnotes");
   const n = all.find(x => x.id === id);
@@ -404,9 +428,11 @@ export interface PlanItem {
   detail: string | null;
   done: boolean;
   category: string;
-  priority: number; // 0=normal, 1=important, 2=urgent
-  budget: number | null; // expected cost in VND
-  result: string | null; // note after completion
+  priority: number;
+  budget: number | null;
+  result: string | null;
+  dayNote: string | null; // daily override note (rep/set/etc) — doesn't change original when copied
+  sourceId: string | null; // original plan id if copied
   createdAt: string;
 }
 
@@ -418,10 +444,16 @@ export function getPlans(date: string): PlanItem[] {
     return (a.time || "99:99").localeCompare(b.time || "99:99");
   });
 }
-export function addPlan(p: Omit<PlanItem, "id" | "done" | "createdAt" | "result">): PlanItem {
+export function addPlan(p: Omit<PlanItem, "id" | "done" | "createdAt" | "result" | "dayNote" | "sourceId"> & { dayNote?: string | null; sourceId?: string | null }): PlanItem {
   const all = load<PlanItem>("t_plans");
-  const n: PlanItem = { ...p, id: uid(), done: false, result: null, priority: p.priority || 0, budget: p.budget || null, createdAt: new Date().toISOString() };
+  const n: PlanItem = { ...p, id: uid(), done: false, result: null, dayNote: p.dayNote || null, sourceId: p.sourceId || null, priority: p.priority || 0, budget: p.budget || null, createdAt: new Date().toISOString() };
   all.push(n); save("t_plans", all); return n;
+}
+export function updatePlanDayNote(id: string, dayNote: string) {
+  const all = load<PlanItem>("t_plans");
+  const p = all.find(x => x.id === id);
+  if (p) p.dayNote = dayNote || null;
+  save("t_plans", all);
 }
 export function togglePlan(id: string) {
   const all = load<PlanItem>("t_plans");

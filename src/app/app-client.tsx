@@ -390,15 +390,18 @@ export default function App() {
                   {habits.map(h => {
                     const ck = habitChecks.some(c => c.habitId === h.id);
                     const hs = S.getHabitStreak(h.id);
-                    return (<div key={h.id} className="flex items-start gap-2 py-1 group">
-                      <button onClick={() => { S.toggleHabitCheck(h.id, date); reload(); }} className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${ck ? "bg-green border-green text-bg" : "border-line hover:border-ink"}`}>{ck && <Ic d={P.check} size={12} sw={3} />}</button>
-                      <span className="text-xs mt-0.5">{h.emoji}</span>
+                    const isLate = isToday && !ck && new Date().getHours() >= 20;
+                    return (<div key={h.id} className={`flex items-start gap-2 py-1.5 group ${isLate ? "bg-red/5 -mx-2.5 px-2.5 rounded" : ""}`}>
+                      <button onClick={() => { S.toggleHabitCheck(h.id, date); reload(); }} className={`w-7 h-7 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${ck ? "bg-green border-green text-bg" : isLate ? "border-red" : "border-line hover:border-ink"}`}>{ck && <Ic d={P.check} size={13} sw={3} />}</button>
+                      <span className="text-xs mt-1">{h.emoji}</span>
                       <div className="flex-1 min-w-0">
                         <span className={`text-[12px] font-medium ${ck ? "line-through text-mute" : ""}`}>{h.name}</span>
                         {h.description && <div className="text-[10px] text-mute mt-0.5 leading-tight">{h.description}</div>}
+                        {isLate && <div className="text-[9px] text-red font-bold mt-0.5">⚠ Chưa hoàn thành — sắp hết ngày!</div>}
                       </div>
-                      {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum shrink-0 mt-0.5">{hs}🔥</span>}
-                      <button onClick={() => { if (confirm("Xóa?")) { S.deleteHabit(h.id); reload(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5"><Ic d={P.x} size={11} /></button>
+                      {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum shrink-0 mt-1">{hs}🔥</span>}
+                      {!ck && <button onClick={() => { S.postponeHabit(h.id, date); reload(); }} className="text-mute2 hover:text-ink opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Dời sang ngày mai"><Ic d={P.right} size={11} /></button>}
+                      <button onClick={() => { if (confirm("Xóa?")) { S.deleteHabit(h.id); reload(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Xóa"><Ic d={P.x} size={11} /></button>
                     </div>);
                   })}
                 </div>
@@ -432,8 +435,9 @@ export default function App() {
                       <span className="text-[9px] text-mute tnum shrink-0 mt-0.5">{n.time}</span>
                       {n.pinned && <span className="text-[9px] shrink-0">📌</span>}
                       <span className={`text-[12px] flex-1 ${n.pinned ? "font-medium" : ""}`}>{n.text}</span>
-                      <button onClick={() => { S.togglePinNote(n.id); reload(); }} className="text-mute2 hover:text-gold opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.pin} size={10} /></button>
-                      <button onClick={() => { S.deleteQuickNote(n.id); reload(); }} className="text-mute2 hover:text-red opacity-0 group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={10} /></button>
+                      <button onClick={() => { const t = prompt("Sửa ghi chú:", n.text); if (t !== null && t.trim()) { S.editQuickNote(n.id, t.trim()); reload(); } }} className="text-mute2 hover:text-ink opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Sửa"><Ic d={P.clip} size={10} /></button>
+                      <button onClick={() => { S.togglePinNote(n.id); reload(); }} className="text-mute2 hover:text-gold opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Ghim"><Ic d={P.pin} size={10} /></button>
+                      <button onClick={() => { if (confirm("Xóa?")) { S.deleteQuickNote(n.id); reload(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Xóa"><Ic d={P.x} size={10} /></button>
                     </div>
                   ))}
                 </div>
@@ -492,8 +496,11 @@ export default function App() {
                         : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0">🍽️</span>}
                         <span className="text-[12px] font-medium flex-1 truncate">{m.foodName}</span>
                         {m.time && <span className="text-[10px] text-mute tnum shrink-0">{m.time}</span>}
-                        {m.calories != null && m.calories > 0 && <span className="text-[10px] bg-gold2 text-gold px-1 py-0.5 rounded font-semibold tnum shrink-0">{m.calories}</span>}
-                        {m.price != null && m.price > 0 && <span className="text-[10px] bg-red2 text-red px-1 py-0.5 rounded font-semibold tnum shrink-0">{fmtCurrency(m.price)}</span>}
+                       {m.calories != null && m.calories > 0 && <span className="text-[10px] bg-gold2 text-gold px-1 py-0.5 rounded font-semibold tnum shrink-0">{m.calories}cal</span>}
+                       {m.protein != null && m.protein > 0 && <span className="text-[10px] bg-blue2 text-blue px-1 py-0.5 rounded font-semibold tnum shrink-0">P{m.protein}g</span>}
+                       {m.fat != null && m.fat > 0 && <span className="text-[10px] bg-card text-mute px-1 py-0.5 rounded font-semibold tnum shrink-0">F{m.fat}g</span>}
+                       {m.carbs != null && m.carbs > 0 && <span className="text-[10px] bg-card text-mute px-1 py-0.5 rounded font-semibold tnum shrink-0">C{m.carbs}g</span>}
+                       {m.price != null && m.price > 0 && <span className="text-[10px] bg-red2 text-red px-1 py-0.5 rounded font-semibold tnum shrink-0">{fmtCurrency(m.price)}</span>}
                         <button onClick={() => del("m", m.id)} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
                       </div>); })}
                     </div>);
@@ -899,18 +906,24 @@ function ImgP({ value, onChange }: { value: string | null; onChange: (v: string 
 
 function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
   const [mt, setMt] = useState(autoMealType()); const [fn, setFn] = useState(""); const [cal, setCal] = useState(""); const [tm, setTm] = useState(nowHHMM()); const [price, setPrice] = useState(""); const [im, setIm] = useState<string | null>(null);
+  const [pro, setPro] = useState(""); const [fat, setFat] = useState(""); const [carb, setCarb] = useState("");
   const pp = parseMoney(price);
   return (<Wrap title="Thêm bữa ăn" onClose={onClose}>
     <div className="flex gap-1 mb-2.5">{MEALS.map(m => (<button key={m.value} onClick={() => setMt(m.value)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${mt === m.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><div className="text-sm">{m.emoji}</div>{m.label}</button>))}</div>
     <ImgP value={im} onChange={setIm} />
     <input type="text" value={fn} onChange={e => setFn(e.target.value)} placeholder="Tên món" autoFocus className={`${ic} mb-2`} />
-    <div className="flex gap-1.5 mb-2"><input type="time" value={tm} onChange={e => setTm(e.target.value)} className={`${ic} flex-1`} /><input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Cal" className={`${ic} flex-1`} /></div>
+    <div className="flex gap-1.5 mb-2"><input type="time" value={tm} onChange={e => setTm(e.target.value)} className={`${ic} flex-1 min-h-[44px]`} /><input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Calories" className={`${ic} flex-1`} /></div>
+    <div className="flex gap-1.5 mb-2">
+      <input type="number" value={pro} onChange={e => setPro(e.target.value)} placeholder="Protein (g)" className={`${ic} flex-1`} />
+      <input type="number" value={fat} onChange={e => setFat(e.target.value)} placeholder="Fat (g)" className={`${ic} flex-1`} />
+      <input type="number" value={carb} onChange={e => setCarb(e.target.value)} placeholder="Carbs (g)" className={`${ic} flex-1`} />
+    </div>
     <div className="mb-2"><MoneyIn value={price} onChange={setPrice} placeholder="Giá tiền" /></div>
     {pp != null && pp > 0 && <div className="flex items-center gap-1 bg-gold2 text-gold border border-gold/20 rounded-md px-2 py-1 text-[10px] font-medium mb-2.5 a-pop"><Ic d={P.wallet} size={11} /> Vào chi tiêu</div>}
     <button onClick={async () => {
       if (!fn.trim()) return;
       try {
-        const meal = S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp });
+        const meal = S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, protein: pro ? parseInt(pro) : null, fat: fat ? parseInt(fat) : null, carbs: carb ? parseInt(carb) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp });
         // Save image to IndexedDB (large storage)
         if (im) await saveImage(`img_${meal.id}`, im);
         if (pp != null && pp > 0) S.addExpense({ date, category: "food", description: fn.trim(), amount: pp, image: null });
@@ -1326,20 +1339,41 @@ function ScheduleSection({ date, onApply }: { date: string; onApply: () => void 
 
 /* ═══ COPY PLANS FROM ANOTHER DAY ═══ */
 function CopyPlansSection({ currentDate, onCopy }: { currentDate: string; onCopy: () => void }) {
+  const [preview, setPreview] = useState<string | null>(null);
   const dates = S.getPlanDates().filter(d => d !== currentDate);
   if (dates.length === 0) return null;
+  const previewPlans = preview ? S.getPlans(preview) : [];
+
   return (
     <div className="bg-card rounded-lg border border-line p-2.5">
       <div className="text-[10px] text-mute font-bold mb-1.5">Sao chép kế hoạch từ ngày khác:</div>
       <div className="grid grid-cols-4 gap-1.5">
-        {dates.slice(0, 8).map(d => (
-          <button key={d} onClick={() => { S.copyPlans(d, currentDate); onCopy(); }}
-            className="py-2 bg-bg2 border border-line rounded-lg text-[10px] font-bold tnum min-h-[44px] hover:border-ink active:scale-95 transition-all text-center">
-            {new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
-            <div className="text-[8px] text-mute font-normal">{S.getPlans(d).length} mục</div>
-          </button>
-        ))}
+        {dates.slice(0, 8).map(d => {
+          const plans = S.getPlans(d);
+          return (
+            <button key={d} onClick={() => setPreview(preview === d ? null : d)}
+              className={`py-2 border rounded-lg text-[10px] font-bold tnum min-h-[44px] active:scale-95 transition-all text-center ${preview === d ? "bg-ink text-bg border-ink" : "bg-bg2 border-line hover:border-ink"}`}>
+              {new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
+              <div className={`text-[8px] font-normal ${preview === d ? "text-bg/70" : "text-mute"}`}>{plans.length} mục</div>
+            </button>
+          );
+        })}
       </div>
+      {preview && previewPlans.length > 0 && (
+        <div className="mt-2 bg-bg2 rounded-lg p-2 border border-line">
+          <div className="text-[9px] text-mute font-bold mb-1">Kế hoạch ngày {fmtDateDisp(preview)}:</div>
+          {previewPlans.map(p => (
+            <div key={p.id} className="text-[10px] text-ink py-0.5 flex items-center gap-1.5">
+              {p.time && <span className="tnum text-mute w-10 shrink-0">{p.time}</span>}
+              <CI cat={p.category} size={11} />
+              <span className="flex-1 truncate">{p.title}</span>
+              {p.detail && <span className="text-mute truncate max-w-[80px]">{p.detail}</span>}
+            </div>
+          ))}
+          <button onClick={() => { S.copyPlans(preview, currentDate); setPreview(null); onCopy(); }}
+            className="w-full mt-2 py-2 bg-ink text-bg rounded-md text-[10px] font-bold active:scale-95 min-h-[40px]">Sao chép {previewPlans.length} mục</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1413,8 +1447,13 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
                       <button onClick={() => { S.updatePlanResult(p.id, resultText); setResultId(null); onChanged(); }} className="px-2 py-1 bg-ink text-bg rounded-md text-[9px] font-bold min-h-[28px]">Lưu</button>
                     </div>
                   )}
+                  {/* Day note — rep/set/custom note for this day only */}
+                  {p.dayNote && <div className="mt-1 text-[10px] text-blue bg-blue2 border border-blue/20 rounded px-1.5 py-0.5">📝 {p.dayNote}</div>}
+                  {!p.done && (
+                    <button onClick={() => { const n = prompt("Ghi chú hôm nay (rep, set, số lượng...):", p.dayNote || ""); if (n !== null) { S.updatePlanDayNote(p.id, n); onChanged(); } }} className="mt-1 text-[9px] text-mute hover:text-ink">+ Ghi chú ngày</button>
+                  )}
                 </div>
-                <button onClick={() => { S.deletePlan(p.id); onChanged(); }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-1"><Ic d={P.x} size={12} /></button>
+                <button onClick={() => { S.deletePlan(p.id); onChanged(); }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-1 min-w-[28px] min-h-[28px] flex items-center justify-center"><Ic d={P.x} size={12} /></button>
               </div>
             </div>
           ))}
