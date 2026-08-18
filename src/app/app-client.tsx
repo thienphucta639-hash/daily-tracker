@@ -91,8 +91,9 @@ export default function App() {
 
   useEffect(() => {
     migrateTimezone();
-    // Migrate old inline base64 images to IndexedDB (runs once)
-    migrateImages().then(() => setOk(true)).catch(() => setOk(true));
+    migrateImages().then(() => {
+      setTimeout(() => setOk(true), 2000);
+    }).catch(() => setTimeout(() => setOk(true), 2000));
   }, []);
   useEffect(() => { if (ok) reload(); }, [ok, reload]);
 
@@ -233,7 +234,34 @@ export default function App() {
     return raw; // inline base64
   };
 
-  if (!ok) return <div className="min-h-screen flex items-center justify-center bg-bg"><div className="w-8 h-8 border-2 border-line border-t-ink rounded-full animate-spin" /></div>;
+  if (!ok) return (
+    <div className="min-h-screen flex items-center justify-center bg-bg overflow-hidden">
+      <div className="text-center">
+        {/* Main title — cinematic reveal */}
+        <div style={{ animation: "splashIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
+          <div className="font-bold text-4xl sm:text-5xl uppercase tracking-[0.3em] text-ink" style={{ letterSpacing: "0.3em" }}>Jay</div>
+          <div className="font-bold text-4xl sm:text-5xl uppercase tracking-[0.3em] text-ink" style={{ letterSpacing: "0.3em", marginTop: -4 }}>Tracker</div>
+        </div>
+        {/* Accent line */}
+        <div className="mx-auto mt-3 h-[2px] bg-gradient-to-r from-transparent via-ink/60 to-transparent rounded-full" style={{ animation: "lineExpand 0.6s ease-out 0.4s both" }} />
+        {/* Tagline */}
+        <div className="text-[11px] text-mute mt-3 uppercase tracking-[0.15em]" style={{ animation: "fadeUp 0.5s ease-out 0.7s both" }}>track everything · every day</div>
+        {/* Loading bar */}
+        <div className="w-32 h-[2px] bg-line rounded-full mx-auto mt-5 overflow-hidden" style={{ animation: "fadeUp 0.3s ease-out 1s both" }}>
+          <div className="h-full bg-ink rounded-full" style={{ animation: "loadBar 1.2s ease-in-out 1s both" }} />
+        </div>
+      </div>
+      {/* Screen fade out */}
+      <div className="absolute inset-0 bg-bg pointer-events-none" style={{ animation: "screenFade 0.3s ease-in 1.7s both" }} />
+      <style>{`
+        @keyframes splashIn { from { opacity:0; transform: scale(0.85) translateY(12px); filter: blur(8px); } to { opacity:1; transform: scale(1) translateY(0); filter: blur(0); } }
+        @keyframes lineExpand { from { width:0; } to { width: 120px; } }
+        @keyframes fadeUp { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+        @keyframes loadBar { from { width:0; } to { width:100%; } }
+        @keyframes screenFade { from { opacity:0; } to { opacity:1; } }
+      `}</style>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-bg flex flex-col">
@@ -293,24 +321,32 @@ export default function App() {
           ) : (
             /* Row 2 normal: date + stats + timer button */
             <>
-              <div className="flex items-center justify-between mt-1.5 gap-1.5">
-                <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                  {prevDataDate && (
-                    <button onClick={() => setDate(prevDataDate)} className="w-10 h-10 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors active:scale-95 shrink-0">
-                      <Ic d={P.left} size={15} />
-                    </button>
-                  )}
-                  <div className="min-w-0">
-                    <span className="font-bold text-xs">{fmtDateDisp(date)}</span>
-                    {isToday && <span className="text-mute text-[9px] ml-1">{getTimeEmoji()} {getTimeOfDay()}</span>}
-                  </div>
+              <div className="flex items-center justify-between mt-1.5 gap-1">
+                {/* ← limited: can't go before first tracked date, but can always go back from future */}
+                {(() => {
+                  const firstDate = allDataDates.length > 0 ? allDataDates[0] : formatDate(new Date());
+                  const prevDay = formatDate(new Date(new Date(date + "T00:00:00").getTime() - 86400000));
+                  const canGoBack = prevDay >= firstDate;
+                  return <button onClick={() => { if (canGoBack) setDate(prevDay); }}
+                    disabled={!canGoBack}
+                    className={`w-10 h-10 rounded-md bg-card border border-line flex items-center justify-center transition-colors active:scale-95 shrink-0 ${canGoBack ? "text-mute hover:text-ink" : "text-line opacity-30"}`}>
+                    <Ic d={P.left} size={15} />
+                  </button>;
+                })()}
+                <div className="flex-1 text-center min-w-0">
+                  <div className="font-bold text-xs">{fmtDateDisp(date)}</div>
+                  {isToday && <div className="text-mute text-[9px]">{getTimeEmoji()} {getTimeOfDay()}</div>}
                 </div>
-                <div className="flex gap-1.5 items-center shrink-0">
-                  <button onClick={() => setTimerSetting(true)} className="flex items-center gap-1 bg-card border border-line hover:border-ink px-3 py-2 rounded-md text-[10px] font-bold text-mute hover:text-ink transition-colors active:scale-95 min-h-[40px]">
-                    <Ic d={P.clock} size={12} /> Hẹn giờ
+                <div className="flex gap-1 items-center shrink-0">
+                  {!isToday && <button onClick={() => setDate(formatDate(new Date()))} className="px-2 h-10 rounded-md bg-ink/10 text-ink text-[9px] font-bold">Nay</button>}
+                  <button onClick={() => setTimerSetting(true)} className="h-10 px-2 bg-card border border-line hover:border-ink rounded-md text-[9px] font-bold text-mute hover:text-ink transition-colors active:scale-95">
+                    <Ic d={P.clock} size={12} />
                   </button>
-                  {!isToday && <button onClick={() => setDate(formatDate(new Date()))} className="px-3 h-10 rounded-md bg-ink/10 text-ink text-[10px] font-bold min-h-[40px]">Nay</button>}
-                  {nextDataDate && <button onClick={() => setDate(nextDataDate)} className="w-10 h-10 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors active:scale-95"><Ic d={P.right} size={15} /></button>}
+                  {/* Always show → */}
+                  <button onClick={() => { const d = new Date(date + "T00:00:00"); d.setDate(d.getDate() + 1); setDate(formatDate(d)); }}
+                    className="w-10 h-10 rounded-md bg-card border border-line flex items-center justify-center text-mute hover:text-ink transition-colors active:scale-95">
+                    <Ic d={P.right} size={15} />
+                  </button>
                 </div>
               </div>
               {/* Stats */}
@@ -403,7 +439,7 @@ export default function App() {
                         {isLate && <div className="text-[9px] text-red font-bold mt-0.5">⚠ Chưa hoàn thành — sắp hết ngày!</div>}
                       </div>
                       {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum shrink-0 mt-1">{hs}🔥</span>}
-                      {!ck && <button onClick={() => { S.postponeHabit(h.id, date); reload(); }} className="text-mute2 hover:text-ink opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Dời sang ngày mai"><Ic d={P.right} size={11} /></button>}
+                      {!ck && <button onClick={() => { if (confirm(`Dời "${h.name}" sang ngày mai?`)) { S.postponeHabit(h.id, date); reload(); } }} className="text-mute2 hover:text-ink opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Dời sang ngày mai"><Ic d={P.right} size={11} /></button>}
                       <button onClick={() => { if (confirm("Xóa?")) { S.deleteHabit(h.id); reload(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Xóa"><Ic d={P.x} size={11} /></button>
                     </div>);
                   })}
@@ -652,19 +688,28 @@ function Sec({ title, icon, count, c, onT, onA, extra, children }: { title: stri
 function playAlarm() {
   try {
     const ac = new AudioContext();
-    const ring = (freq: number, t: number, dur: number) => {
-      const o = ac.createOscillator(); const g = ac.createGain();
-      o.type = "square"; o.frequency.value = freq;
-      g.gain.setValueAtTime(0.25, ac.currentTime + t);
-      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + t + dur);
+    const beep = (freq: number, start: number, dur: number, vol: number) => {
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.type = "square";
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(vol, ac.currentTime + start);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + start + dur);
       o.connect(g); g.connect(ac.destination);
-      o.start(ac.currentTime + t); o.stop(ac.currentTime + t + dur);
+      o.start(ac.currentTime + start);
+      o.stop(ac.currentTime + start + dur);
     };
-    for (let i = 0; i < 5; i++) {
-      ring(880, i * 0.5, 0.12);
-      ring(880, i * 0.5 + 0.15, 0.12);
-      ring(1320, i * 0.5 + 0.3, 0.15);
+    // Pattern: tít-tít-tít (pause) tít-tít-tít (pause) tít-tít-tít — 3 rounds
+    for (let round = 0; round < 3; round++) {
+      const base = round * 1.5;
+      beep(1000, base, 0.1, 0.35);
+      beep(1000, base + 0.2, 0.1, 0.35);
+      beep(1000, base + 0.4, 0.1, 0.35);
+      // Higher pitch on 3rd beep each round
+      beep(1400, base + 0.6, 0.15, 0.3);
     }
+    // Final long beep
+    beep(1200, 4.5, 0.4, 0.3);
   } catch { /* blocked */ }
 }
 
@@ -1245,6 +1290,7 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
 
 /* ═══ ADD PLAN MODAL ═══ */
 function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
+  const [step, setStep] = useState(1);
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
   const [time, setTime] = useState("");
@@ -1257,7 +1303,6 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
   const [remindColor, setRemindColor] = useState("#ffa502");
   const [remindNote, setRemindNote] = useState("");
 
-  const allCats = [...ACTS, ...EXPS.filter(e => !ACTS.some(a => a.value === e.value))];
   const quickPlans = [
     { t: "Ăn sáng", c: "eat", time: "07:00" },
     { t: "Ăn trưa", c: "eat", time: "12:00" },
@@ -1269,62 +1314,79 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
     { t: "Nghỉ ngơi", c: "rest", time: "22:00" },
   ];
 
-  return (<Wrap title="Thêm kế hoạch" onClose={onClose}>
-    {/* Quick add */}
-    <div className="text-[9px] text-mute2 font-bold uppercase tracking-widest mb-1">Thêm nhanh:</div>
-    <div className="grid grid-cols-4 gap-1.5 mb-2.5">
-      {quickPlans.map(q => (
-        <button type="button" key={q.t} onClick={() => { S.addPlan({ date, time: q.time, title: q.t, detail: null, category: q.c, priority: 0, budget: null }); onDone(); }}
-          className="flex flex-col items-center gap-0.5 py-2 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[48px] active:scale-95 hover:border-ink transition-all">
-          <CI cat={q.c} size={16} /><span>{q.t}</span><span className="text-[8px] text-mute font-normal tnum">{q.time}</span>
-        </button>
-      ))}
-    </div>
+  const doSave = () => {
+    if (!title.trim()) return;
+    const plan = S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed });
+    if (remind) S.addReminder({ planId: plan.id, planDate: date, planTitle: title.trim(), planTime: time || null, planDetail: detail.trim() || null, remindAt: remindDate, color: remindColor, attachment: remindNote.trim() || null });
+    onDone();
+  };
 
-    <div className="text-[9px] text-mute2 font-bold uppercase tracking-widest mb-1">Hoặc tự nhập:</div>
-    <div className="flex flex-wrap gap-1.5 mb-2">{allCats.slice(0, 10).map(c => (<button type="button" key={c.value} onClick={() => setCat(c.value)} className={`px-2.5 py-1.5 rounded-md text-[10px] font-bold min-h-[36px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{c.emoji} {c.label}</button>))}</div>
-    <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề" autoFocus className={`${ic} mb-2`} />
-    <input type="text" value={detail} onChange={e => setDetail(e.target.value)} placeholder="Chi tiết / mục tiêu" className={`${ic} mb-2`} />
-    <div className="flex gap-2 mb-2">
-      <input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} flex-1 min-h-[44px]`} />
-      <div className="flex-1"><MoneyIn value={budgetStr} onChange={setBudgetStr} placeholder="Chi phí dự kiến" /></div>
-    </div>
-    <div className="flex gap-1.5 mb-2.5">
-      {[{ v: 0, l: "Bình thường", c: "border-line text-mute" }, { v: 1, l: "⚠️ Quan trọng", c: "border-gold/40 text-gold" }, { v: 2, l: "🔴 Gấp", c: "border-red/40 text-red" }].map(p => (
-        <button type="button" key={p.v} onClick={() => setPriority(p.v)} className={`flex-1 py-2 rounded-md text-[10px] font-bold min-h-[40px] transition-all border ${priority === p.v ? "bg-ink text-bg border-ink" : `bg-bg2 ${p.c}`}`}>{p.l}</button>
-      ))}
-    </div>
-    {/* Reminder */}
-    <div className="mb-2.5">
-      <button type="button" onClick={() => setRemind(!remind)} className={`w-full py-2 rounded-md text-[10px] font-bold min-h-[40px] transition-all border ${remind ? "bg-gold2 border-gold/30 text-gold" : "bg-bg2 border-line text-mute"}`}>
+  return (<Wrap title={step === 1 ? `Kế hoạch · ${fmtDateDisp(date)}` : "Chi tiết & nhắc nhở"} onClose={onClose}>
+    {step === 1 ? (<>
+      {/* Step 1: Quick add + basic info */}
+      <div className="grid grid-cols-4 gap-1.5 mb-2.5">
+        {quickPlans.map(q => (
+          <button type="button" key={q.t} onClick={() => { S.addPlan({ date, time: q.time, title: q.t, detail: null, category: q.c, priority: 0, budget: null }); onDone(); }}
+            className="flex flex-col items-center gap-0.5 py-2 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[48px] active:scale-95 hover:border-ink transition-all">
+            <CI cat={q.c} size={16} /><span>{q.t}</span><span className="text-[8px] text-mute font-normal tnum">{q.time}</span>
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-5 gap-1 mb-2">{ACTS.map(c => (<button type="button" key={c.value} onClick={() => setCat(c.value)} className={`flex flex-col items-center py-1.5 rounded-md text-[8px] font-bold min-h-[40px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={13} />{c.label}</button>))}</div>
+      <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề" autoFocus className={`${ic} mb-2`} />
+      <input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} mb-2 min-h-[44px]`} />
+      <div className="flex gap-2">
+        <button type="button" onClick={doSave} disabled={!title.trim()} className="flex-1 py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">Thêm nhanh</button>
+        <button type="button" onClick={() => setStep(2)} disabled={!title.trim()} className="flex-1 py-2.5 rounded-lg bg-bg2 border border-line text-ink font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-[11px]">Chi tiết →</button>
+      </div>
+    </>) : (<>
+      {/* Step 2: Priority + budget + reminder */}
+      <div className="bg-bg2 rounded-lg px-2.5 py-1.5 mb-2.5 flex items-center justify-between">
+        <span className="text-[11px] font-medium"><CI cat={cat} size={12} /> {title}</span>
+        {time && <span className="text-[10px] text-mute tnum">{time}</span>}
+      </div>
+      <input type="text" value={detail} onChange={e => setDetail(e.target.value)} placeholder="Chi tiết / mục tiêu" className={`${ic} mb-2`} />
+      <div className="mb-2"><MoneyIn value={budgetStr} onChange={setBudgetStr} placeholder="Chi phí dự kiến" /></div>
+      <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+        {[{ v: 0, l: "Bình thường" }, { v: 1, l: "⚠️ Quan trọng" }, { v: 2, l: "🔴 Gấp" }].map(p => (
+          <button type="button" key={p.v} onClick={() => setPriority(p.v)} className={`py-2 rounded-md text-[10px] font-bold min-h-[40px] transition-all border ${priority === p.v ? "bg-ink text-bg border-ink" : "bg-bg2 border-line text-mute"}`}>{p.l}</button>
+        ))}
+      </div>
+      {/* Reminder */}
+      <button type="button" onClick={() => setRemind(!remind)} className={`w-full py-2 rounded-md text-[10px] font-bold min-h-[40px] mb-1.5 transition-all border ${remind ? "bg-gold2 border-gold/30 text-gold" : "bg-bg2 border-line text-mute"}`}>
         🔔 {remind ? "Nhắc nhở: BẬT" : "Thêm nhắc nhở"}
       </button>
-      {remind && (
-        <div className="mt-1.5 bg-bg2 rounded-lg p-2 border border-line space-y-1.5">
-          <div className="flex gap-1.5">
-            <input type="date" value={remindDate} onChange={e => setRemindDate(e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none min-h-[40px]" />
-            <input type="color" value={remindColor} onChange={e => setRemindColor(e.target.value)} className="w-10 h-10 rounded-md border border-line cursor-pointer" />
+      {remind && (() => {
+        const today = formatDate(new Date());
+        const daysUntilPlan = Math.round((new Date(date + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000);
+        const daysUntilRemind = Math.round((new Date(date + "T00:00:00").getTime() - new Date(remindDate + "T00:00:00").getTime()) / 86400000);
+        // Generate valid day options: 0 to daysUntilPlan, skip if too close (<0) or too far
+        const dayOptions = [0, 1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 30].filter(d => d <= daysUntilPlan && d >= 0);
+        return (
+          <div className="bg-bg2 rounded-lg p-2 border border-line space-y-1.5 mb-2">
+            <div className="text-[9px] text-mute">Plan: <span className="text-ink font-bold">{fmtDateDisp(date)}</span> · {daysUntilPlan > 0 ? `còn ${daysUntilPlan} ngày` : "hôm nay"}</div>
+            <div className="text-[9px] text-mute">Nhắc: <span className="text-gold font-bold">{fmtDateDisp(remindDate)}</span>{daysUntilRemind > 0 ? ` (${daysUntilRemind} ngày trước plan)` : " (ngày plan)"}</div>
+            <div className="flex flex-wrap gap-1">
+              {dayOptions.map(d => {
+                const target = addDaysStr(date, -d);
+                const label = d === 0 ? "Ngày plan" : `${d} ngày trước`;
+                return <button key={d} type="button" onClick={() => setRemindDate(target)}
+                  className={`px-2 py-1.5 rounded-md text-[9px] font-bold min-h-[32px] active:scale-95 ${remindDate === target ? "bg-ink text-bg" : "bg-card border border-line text-mute"}`}>{label}</button>;
+              })}
+            </div>
+            <div className="flex gap-1.5">
+              <input type="date" value={remindDate} min={S.getAllDataDates()[0] || formatDate(new Date())} onChange={e => setRemindDate(e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none min-h-[40px]" />
+              <input type="color" value={remindColor} onChange={e => setRemindColor(e.target.value)} className="w-10 h-10 rounded-md border border-line cursor-pointer" />
+            </div>
+            <input type="text" value={remindNote} onChange={e => setRemindNote(e.target.value)} placeholder="Ghi chú" className="w-full px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
           </div>
-          <input type="text" value={remindNote} onChange={e => setRemindNote(e.target.value)} placeholder="Ghi chú thêm / đính kèm" className="w-full px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
-          <div className="grid grid-cols-4 gap-1">
-            {[
-              { l: "Ngày mai", d: 1 }, { l: "3 ngày", d: 3 }, { l: "1 tuần", d: 7 }, { l: "1 tháng", d: 30 },
-            ].map(p => (
-              <button key={p.l} type="button" onClick={() => setRemindDate(addDaysStr(formatDate(new Date()), p.d))}
-                className="py-1.5 rounded-md bg-card border border-line text-[9px] font-bold text-mute min-h-[32px] active:scale-95">{p.l}</button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-    <button type="button" onClick={() => {
-      if (!title.trim()) return;
-      const plan = S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed });
-      if (remind) {
-        S.addReminder({ planId: plan.id, planDate: date, planTitle: title.trim(), planTime: time || null, planDetail: detail.trim() || null, remindAt: remindDate, color: remindColor, attachment: remindNote.trim() || null });
-      }
-      onDone();
-    }} disabled={!title.trim()} className="w-full py-3 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-sm">Thêm kế hoạch</button>
+        );
+      })()}
+      <div className="flex gap-2">
+        <button type="button" onClick={() => setStep(1)} className="py-2.5 px-4 rounded-lg bg-bg2 border border-line text-mute font-bold active:scale-[0.98] min-h-[48px]">←</button>
+        <button type="button" onClick={doSave} className="flex-1 py-2.5 rounded-lg bg-ink text-bg font-bold active:scale-[0.98] min-h-[48px]">Thêm kế hoạch</button>
+      </div>
+    </>)}
   </Wrap>);
 }
 
@@ -1408,34 +1470,53 @@ function ScheduleSection({ date, onApply }: { date: string; onApply: () => void 
 /* ═══ COPY PLANS FROM ANOTHER DAY ═══ */
 function CopyPlansSection({ currentDate, onCopy }: { currentDate: string; onCopy: () => void }) {
   const [preview, setPreview] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const dates = S.getPlanDates().filter(d => d !== currentDate);
   if (dates.length === 0) return null;
   const previewPlans = preview ? S.getPlans(preview) : [];
+  const many = dates.length > 4;
 
   return (
     <div className="bg-card rounded-lg border border-line p-2.5">
-      <div className="text-[10px] text-mute font-bold mb-1.5">Sao chép kế hoạch từ ngày khác:</div>
-      <div className="grid grid-cols-4 gap-1.5">
-        {dates.slice(0, 8).map(d => {
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] text-mute font-bold">Sao chép kế hoạch</span>
+        <span className="text-[9px] text-mute tnum">{dates.length} ngày</span>
+      </div>
+      <div className={`grid ${many ? "grid-cols-1 divide-y divide-line/30" : "grid-cols-4"} gap-${many ? "0" : "1.5"} ${many && !expanded ? "max-h-[120px] overflow-hidden" : ""}`}>
+        {(many && !expanded ? dates.slice(0, 3) : dates.slice(0, 12)).map(d => {
           const plans = S.getPlans(d);
+          const isSel = preview === d;
+          if (many) {
+            return (
+              <button key={d} onClick={() => setPreview(isSel ? null : d)}
+                className={`flex items-center gap-2 px-2 py-2 text-left min-h-[44px] active:scale-[0.98] transition-all ${isSel ? "bg-ink/10" : "hover:bg-bg2"}`}>
+                <span className="text-[11px] font-bold tnum w-12 shrink-0">{fmtDateDisp(d).split(",")[0]?.trim() || ""} {new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}</span>
+                <span className="flex-1 text-[10px] text-mute truncate">{plans.map(p => p.title).join(", ")}</span>
+                <span className="text-[9px] text-mute shrink-0">{plans.length}</span>
+              </button>
+            );
+          }
           return (
-            <button key={d} onClick={() => setPreview(preview === d ? null : d)}
-              className={`py-2 border rounded-lg text-[10px] font-bold tnum min-h-[44px] active:scale-95 transition-all text-center ${preview === d ? "bg-ink text-bg border-ink" : "bg-bg2 border-line hover:border-ink"}`}>
+            <button key={d} onClick={() => setPreview(isSel ? null : d)}
+              className={`py-2 border rounded-lg text-[10px] font-bold tnum min-h-[44px] active:scale-95 transition-all text-center ${isSel ? "bg-ink text-bg border-ink" : "bg-bg2 border-line hover:border-ink"}`}>
               {new Date(d + "T00:00:00").getDate()}/{new Date(d + "T00:00:00").getMonth() + 1}
-              <div className={`text-[8px] font-normal ${preview === d ? "text-bg/70" : "text-mute"}`}>{plans.length} mục</div>
+              <div className={`text-[8px] font-normal ${isSel ? "text-bg/70" : "text-mute"}`}>{plans.length}</div>
             </button>
           );
         })}
       </div>
+      {many && dates.length > 3 && !expanded && (
+        <button onClick={() => setExpanded(true)} className="w-full py-1.5 text-[9px] text-mute font-bold mt-1 hover:text-ink">Xem thêm {dates.length - 3} ngày</button>
+      )}
       {preview && previewPlans.length > 0 && (
-        <div className="mt-2 bg-bg2 rounded-lg p-2 border border-line">
-          <div className="text-[9px] text-mute font-bold mb-1">Kế hoạch ngày {fmtDateDisp(preview)}:</div>
+        <div className="mt-2 bg-bg2 rounded-lg p-2 border border-line max-h-[200px] overflow-y-auto">
+          <div className="text-[9px] text-mute font-bold mb-1">{fmtDateDisp(preview)} · {previewPlans.length} mục:</div>
           {previewPlans.map(p => (
-            <div key={p.id} className="text-[10px] text-ink py-0.5 flex items-center gap-1.5">
-              {p.time && <span className="tnum text-mute w-10 shrink-0">{p.time}</span>}
+            <div key={p.id} className="text-[10px] text-ink py-1 flex items-center gap-1.5 border-b border-line/20 last:border-0">
+              <span className="tnum text-mute w-10 shrink-0 text-[9px]">{p.time || "—"}</span>
               <CI cat={p.category} size={11} />
-              <span className="flex-1 truncate">{p.title}</span>
-              {p.detail && <span className="text-mute truncate max-w-[80px]">{p.detail}</span>}
+              <span className="flex-1 font-medium">{p.title}</span>
+              {p.detail && <span className="text-mute text-[9px] truncate max-w-[60px]">{p.detail}</span>}
             </div>
           ))}
           <button onClick={() => { S.copyPlans(preview, currentDate); setPreview(null); onCopy(); }}
@@ -1550,18 +1631,38 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
   );
 }
 
-/* ═══ PET ASSISTANT — Jay Wolf ═══ */
+/* ═══ PET ASSISTANT ═══ */
+const PET_GREETINGS = [
+  "Ê bro! Quay lại rồi hả? Let's go track ngày hôm nay nào! 🔥",
+  "Yo yo! Chill thôi, mở app lên là tui biết bạn nghiêm túc rồi đó! 💪",
+  "Chào bạn yêu! Hôm nay mình sẽ track mọi thứ ngon lành nha! ✨",
+  "Ê ê! Welcome back! Chuỗi streak của bạn đang đẹp lắm á! 🔥",
+  "Hế lô! Tui ở đây chờ bạn nè. Track đi rồi flex! 💯",
+  "Bạn ơi quay lại rồi! Tui nhớ bạn ghê. Nào track thôi! 🐾",
+  "Yooo! Ngày mới tràn đầy năng lượng! Bắt đầu track nào! ⚡",
+];
+const PET_REMIND_INTROS = [
+  "Ê ê! Bạn có mấy cái nhắc nhở nè, đừng quên nha!",
+  "Yo! Tui phải nhắc bạn mấy việc quan trọng nè!",
+  "Bạn ơi! Có plan sắp tới nè, coi qua đi!",
+  "Alert! Mấy cái deadline đang tới kìa bạn ơi!",
+];
 const PET_TALKS = [
-  "Yo! Hôm nay kế hoạch gì?", "Track đi rồi nghỉ!", "Đã ăn chưa? Ghi lại nè!",
-  "Chuỗi ngày đẹp lắm, giữ nha!", "Ngày mới, cơ hội mới!", "Uống nước đi bạn!",
-  "Keep going! Đang tốt lắm!", "Thở sâu, relax 1 chút!", "Plan ngày mai chưa?",
-  "Chi tiêu hôm nay ổn không?", "Đi tập chưa? Go go!", "Nghỉ ngơi cũng cần thiết!",
-  "Kể chuyện vui đi!", "Luôn ở đây với bạn!", "Bạn đang làm tốt rồi!",
-  "Check thói quen nào!", "Plan xong chưa?", "Ngủ sớm nha, mai chiến tiếp!",
-  "Focus thôi! Tắt hết distraction!", "Mỗi ngày 1% tốt hơn!",
-  "Gym chưa? Đi nào!", "Ghi chú gì nhanh đi!", "Hôm nay vui không?",
-  "Đừng quên track chi tiêu!", "Weekend mà, thư giãn đi!", "Lên kế hoạch tuần sau!",
-  "Ăn healthy nha!", "Đọc sách chưa?", "Jay Wolf tin bạn!",
+  "Hôm nay plan gì? Kể tui nghe!", "Track xong chưa? Đừng để tui nhắc nha!",
+  "Ăn gì chưa? Ghi lại liền đi!", "Chuỗi ngày đẹp lắm, đừng phá nha bro!",
+  "Ngày mới, vibe mới! Let's go!", "Uống nước đi nè, healthy lifestyle!",
+  "Keep pushing! Bạn đang on track!", "Thở sâu, reset mindset 1 chút!",
+  "Plan ngày mai chưa? Tui chờ!", "Chi tiêu hôm nay sao? Check lại đi!",
+  "Gym session hôm nay thế nào?", "Rest day cũng là gain day nha!",
+  "Share 1 win nhỏ hôm nay đi!", "Tui luôn ở đây back bạn!",
+  "Bạn đang làm tốt lắm rồi á!", "Thói quen hôm nay check hết chưa?",
+  "Plan done chưa? Tick hết đi!", "Ngủ sớm nha, recovery quan trọng!",
+  "Focus mode ON! No distraction!", "Mỗi ngày level up 1% bạn nhé!",
+  "Legs day hay chest day? Ghi lại!", "Quick note gì không? Tui chờ!",
+  "Hôm nay mood thế nào?", "Track chi tiêu = quản lý tốt hơn!",
+  "Weekend vibes! Nhưng vẫn track nha!", "Next week plan sẵn chưa?",
+  "Eat clean, train mean!", "Đọc sách chưa bro?",
+  "Tui tin bạn! Cứ consistent thôi!", "No pain no gain! Track nào!",
 ];
 
 function PetAssistant() {
@@ -1577,8 +1678,14 @@ function PetAssistant() {
   useEffect(() => {
     const t = setTimeout(() => {
       setShow(true);
-      setBubble(todayRem.length > 0 ? `Có ${todayRem.length} nhắc nhở! Giữ mình để xem.` : PET_TALKS[Math.floor(Math.random() * PET_TALKS.length)]);
-      setTimeout(() => setBubble(null), 5000);
+      if (todayRem.length >= 3) {
+        setBubble(PET_REMIND_INTROS[Math.floor(Math.random() * PET_REMIND_INTROS.length)] + ` (${todayRem.length} việc)`);
+      } else if (todayRem.length > 0) {
+        setBubble(`Ê! Có ${todayRem.length} nhắc nhở nè. Giữ mình để xem chi tiết!`);
+      } else {
+        setBubble(PET_GREETINGS[Math.floor(Math.random() * PET_GREETINGS.length)]);
+      }
+      setTimeout(() => setBubble(null), 6000);
     }, 600);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1614,19 +1721,26 @@ function PetAssistant() {
           </div>
           {allRem.length === 0 ? (
             <div className="px-3 py-6 text-center text-mute text-[10px]">Chưa có nhắc nhở</div>
-          ) : allRem.map(r => (
-            <div key={r.id} className="px-3 py-2 border-b border-line/30 last:border-0" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] font-bold">{r.planTitle}</div>
-                  <div className="text-[9px] text-mute tnum">{r.planDate}{r.planTime ? ` · ${r.planTime}` : ""}</div>
-                  {r.planDetail && <div className="text-[9px] text-mute">{r.planDetail}</div>}
-                  {r.attachment && <div className="text-[9px] text-blue">📎 {r.attachment}</div>}
+          ) : allRem.map(r => {
+            const daysLeft = Math.round((new Date(r.planDate + "T00:00:00").getTime() - Date.now()) / 86400000);
+            return (
+              <div key={r.id} className="px-3 py-2.5 border-b border-line/30 last:border-0" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold">{r.planTitle}</div>
+                    <div className="text-[9px] text-mute tnum">
+                      {fmtDateDisp(r.planDate)}
+                      {r.planTime ? ` · ${r.planTime}` : " · Cả ngày"}
+                      {daysLeft > 0 ? ` · còn ${daysLeft} ngày` : daysLeft === 0 ? " · HÔM NAY" : ""}
+                    </div>
+                    {r.planDetail && <div className="text-[9px] text-ink mt-0.5">{r.planDetail}</div>}
+                    {r.attachment && <div className="text-[9px] text-blue mt-0.5">📎 {r.attachment}</div>}
+                  </div>
+                  <button onClick={() => dismiss(r.id)} className="min-w-[36px] min-h-[36px] flex items-center justify-center text-mute hover:text-green rounded-md bg-bg2 border border-line"><Ic d={P.check} size={14} /></button>
                 </div>
-                <button onClick={() => dismiss(r.id)} className="min-w-[32px] min-h-[32px] flex items-center justify-center text-mute hover:text-green"><Ic d={P.check} size={13} /></button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1641,57 +1755,43 @@ function PetAssistant() {
         </div>
       )}
 
-      {/* Pet — flat 2D cute wolf */}
+      {/* Pet — Among Us */}
       <div
         onClick={tap}
         onMouseDown={pressStart} onMouseUp={pressEnd} onMouseLeave={pressEnd}
         onTouchStart={pressStart} onTouchEnd={e => { e.preventDefault(); pressEnd(); }}
         onContextMenu={e => e.preventDefault()}
-        className="w-13 h-13 cursor-pointer active:scale-90 transition-transform relative"
-        style={{ animation: "petBob 2.5s ease-in-out infinite", width: 52, height: 52, userSelect: "none", WebkitUserSelect: "none" }}
+        className="cursor-pointer active:scale-90 transition-transform relative"
+        style={{ animation: "petBob 2.5s ease-in-out infinite", width: 50, height: 58, userSelect: "none", WebkitUserSelect: "none", filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.4))" }}
       >
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
-          {/* Shadow */}
-          <ellipse cx="26" cy="49" rx="12" ry="2" fill="#000" opacity="0.15"/>
+        <svg width="50" height="58" viewBox="0 0 50 58" fill="none">
+          {/* Backpack */}
+          <path d="M4 22C4 18 6 17 8 17H10V37H8C6 37 4 36 4 32Z" fill="#252525"/>
+          <path d="M5 24h4v4H5z" rx="1" fill="#363636"/>
           {/* Body */}
-          <ellipse cx="26" cy="38" rx="10" ry="8" fill="#333"/>
-          {/* Head */}
-          <circle cx="26" cy="22" r="13" fill="#3a3a3a"/>
-          {/* Left ear */}
-          <path d="M15 14L11 3l8 7" fill="#3a3a3a" stroke="#555" strokeWidth="0.5"/>
-          <path d="M14 12l-2-7 5 5" fill="#e8845c"/>
-          {/* Right ear */}
-          <path d="M37 14L41 3l-8 7" fill="#3a3a3a" stroke="#555" strokeWidth="0.5"/>
-          <path d="M38 12l2-7-5 5" fill="#e8845c"/>
-          {/* Face mask */}
-          <ellipse cx="26" cy="26" rx="7" ry="5" fill="#4a4a4a"/>
-          {/* Eyes */}
-          <ellipse cx="21" cy="20" rx="3" ry="3.2" fill="#111"/>
-          <ellipse cx="31" cy="20" rx="3" ry="3.2" fill="#111"/>
-          <circle cx="21" cy="20" r="2.2" fill="#ffa502"/>
-          <circle cx="31" cy="20" r="2.2" fill="#ffa502"/>
-          <circle cx="21.5" cy="19.5" r="1" fill="#111"/>
-          <circle cx="31.5" cy="19.5" r="1" fill="#111"/>
-          {/* Eye sparkle */}
-          <circle cx="20.3" cy="19" r="0.7" fill="#fff" opacity="0.8"/>
-          <circle cx="30.3" cy="19" r="0.7" fill="#fff" opacity="0.8"/>
-          {/* Nose */}
-          <ellipse cx="26" cy="25" rx="2" ry="1.4" fill="#1a1a1a"/>
-          <circle cx="25.5" cy="24.6" r="0.4" fill="#333"/>
-          {/* Mouth */}
-          <path d="M24 27q2 1.5 4 0" stroke="#666" strokeWidth="0.7" fill="none" strokeLinecap="round"/>
-          {/* Cheeks */}
-          <circle cx="17" cy="24" r="2" fill="#e8845c" opacity="0.25"/>
-          <circle cx="35" cy="24" r="2" fill="#e8845c" opacity="0.25"/>
-          {/* Paws */}
-          <ellipse cx="20" cy="44" rx="4" ry="3" fill="#333"/>
-          <ellipse cx="32" cy="44" rx="4" ry="3" fill="#333"/>
-          <ellipse cx="20" cy="45" rx="2.5" ry="1.5" fill="#4a4a4a"/>
-          <ellipse cx="32" cy="45" rx="2.5" ry="1.5" fill="#4a4a4a"/>
+          <path d="M13 50V22C13 11 17 4 25 4C33 4 37 11 37 22V50H31V42H19V50Z" fill="#1e1e1e"/>
+          {/* Body outline glow */}
+          <path d="M13 50V22C13 11 17 4 25 4C33 4 37 11 37 22V50H31V42H19V50Z" fill="none" stroke="#3a3a3a" strokeWidth="1"/>
+          {/* Visor bg */}
+          <path d="M18 16C18 12 20 10 25 10H33C36 10 38 12 38 16V22C38 26 36 28 33 28H25C20 28 18 26 18 22Z" fill="#1a6fc4"/>
+          {/* Visor main */}
+          <path d="M19 17C19 13 21 11 25 11H32C35 11 37 13 37 17V21C37 25 35 27 32 27H25C21 27 19 25 19 21Z" fill="#4db8ff"/>
+          {/* Visor shine */}
+          <ellipse cx="32" cy="16" rx="4" ry="3" fill="#9ddfff" opacity="0.6"/>
+          <ellipse cx="29" cy="14" rx="2" ry="1.5" fill="#fff" opacity="0.35"/>
+          {/* Leg split */}
+          <rect x="23" y="42" width="4" height="8" fill="#0a0a0a"/>
+          {/* Left leg */}
+          <path d="M13 42h10v6c0 3-2 5-5 5h-2c-2 0-3-2-3-5z" fill="#1e1e1e" stroke="#3a3a3a" strokeWidth="0.5"/>
+          {/* Right leg */}
+          <path d="M27 42h10v6c0 3-1 5-3 5h-2c-3 0-5-2-5-5z" fill="#1e1e1e" stroke="#3a3a3a" strokeWidth="0.5"/>
+          {/* Shoe soles */}
+          <path d="M14 48h8c0 3-1 5-4 5s-4-2-4-5z" fill="#252525"/>
+          <path d="M28 48h8c0 3-1 5-4 5s-4-2-4-5z" fill="#252525"/>
         </svg>
         {/* Badge */}
         {todayRem.length > 0 && (
-          <span className="absolute top-0 right-0 w-5 h-5 bg-red rounded-full flex items-center justify-center text-[8px] text-bg font-bold a-blink border-2 border-bg">{todayRem.length}</span>
+          <span className="absolute -top-1 -right-1 w-5 h-5 bg-red rounded-full flex items-center justify-center text-[8px] text-bg font-bold a-blink border-2 border-bg">{todayRem.length}</span>
         )}
       </div>
 
