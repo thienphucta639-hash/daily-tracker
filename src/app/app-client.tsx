@@ -905,34 +905,58 @@ function ImgP({ value, onChange }: { value: string | null; onChange: (v: string 
 }
 
 function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
+  const [step, setStep] = useState(1); // 1=basic, 2=nutrition
   const [mt, setMt] = useState(autoMealType()); const [fn, setFn] = useState(""); const [cal, setCal] = useState(""); const [tm, setTm] = useState(nowHHMM()); const [price, setPrice] = useState(""); const [im, setIm] = useState<string | null>(null);
   const [pro, setPro] = useState(""); const [fat, setFat] = useState(""); const [carb, setCarb] = useState("");
   const pp = parseMoney(price);
-  return (<Wrap title="Thêm bữa ăn" onClose={onClose}>
-    <div className="flex gap-1 mb-2.5">{MEALS.map(m => (<button key={m.value} onClick={() => setMt(m.value)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${mt === m.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><div className="text-sm">{m.emoji}</div>{m.label}</button>))}</div>
-    <ImgP value={im} onChange={setIm} />
-    <input type="text" value={fn} onChange={e => setFn(e.target.value)} placeholder="Tên món" autoFocus className={`${ic} mb-2`} />
-    <div className="flex gap-1.5 mb-2"><input type="time" value={tm} onChange={e => setTm(e.target.value)} className={`${ic} flex-1 min-h-[44px]`} /><input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Calories" className={`${ic} flex-1`} /></div>
-    <div className="flex gap-1.5 mb-2">
-      <input type="number" value={pro} onChange={e => setPro(e.target.value)} placeholder="Protein (g)" className={`${ic} flex-1`} />
-      <input type="number" value={fat} onChange={e => setFat(e.target.value)} placeholder="Fat (g)" className={`${ic} flex-1`} />
-      <input type="number" value={carb} onChange={e => setCarb(e.target.value)} placeholder="Carbs (g)" className={`${ic} flex-1`} />
-    </div>
-    <div className="mb-2"><MoneyIn value={price} onChange={setPrice} placeholder="Giá tiền" /></div>
-    {pp != null && pp > 0 && <div className="flex items-center gap-1 bg-gold2 text-gold border border-gold/20 rounded-md px-2 py-1 text-[10px] font-medium mb-2.5 a-pop"><Ic d={P.wallet} size={11} /> Vào chi tiêu</div>}
-    <button onClick={async () => {
-      if (!fn.trim()) return;
-      try {
-        const meal = S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, protein: pro ? parseInt(pro) : null, fat: fat ? parseInt(fat) : null, carbs: carb ? parseInt(carb) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp });
-        // Save image to IndexedDB (large storage)
-        if (im) await saveImage(`img_${meal.id}`, im);
-        if (pp != null && pp > 0) S.addExpense({ date, category: "food", description: fn.trim(), amount: pp, image: null });
-        onDone();
-      } catch (err) {
-        console.error(err);
-        alert("Lỗi lưu. Thử lại.");
-      }
-    }} disabled={!fn.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold transition-colors disabled:opacity-30 active:scale-[0.98]">Thêm</button>
+
+  const doSave = async () => {
+    if (!fn.trim()) return;
+    try {
+      const meal = S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, protein: pro ? parseInt(pro) : null, fat: fat ? parseInt(fat) : null, carbs: carb ? parseInt(carb) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp });
+      if (im) await saveImage(`img_${meal.id}`, im);
+      if (pp != null && pp > 0) S.addExpense({ date, category: "food", description: fn.trim(), amount: pp, image: null });
+      onDone();
+    } catch { alert("Lỗi lưu."); }
+  };
+
+  return (<Wrap title={step === 1 ? "Thêm bữa ăn" : "Dinh dưỡng & giá"} onClose={onClose}>
+    {step === 1 ? (<>
+      {/* Step 1: Meal type + name + photo + time */}
+      <div className="flex gap-1 mb-2">{MEALS.map(m => (<button key={m.value} onClick={() => setMt(m.value)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all min-h-[40px] ${mt === m.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><div className="text-sm">{m.emoji}</div>{m.label}</button>))}</div>
+      <ImgP value={im} onChange={setIm} />
+      <input type="text" value={fn} onChange={e => setFn(e.target.value)} placeholder="Tên món" autoFocus className={`${ic} mb-2`} />
+      <input type="time" value={tm} onChange={e => setTm(e.target.value)} className={`${ic} mb-2 min-h-[44px]`} />
+      <div className="flex gap-2">
+        <button onClick={doSave} disabled={!fn.trim()} className="flex-1 py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">Thêm nhanh</button>
+        <button onClick={() => setStep(2)} disabled={!fn.trim()} className="flex-1 py-2.5 rounded-lg bg-bg2 border border-line text-ink font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-[11px]">Thêm chi tiết →</button>
+      </div>
+    </>) : (<>
+      {/* Step 2: Nutrition + price */}
+      <div className="bg-bg2 rounded-lg px-2.5 py-1.5 mb-2.5 flex items-center justify-between">
+        <span className="text-[11px] font-medium">{fn}</span>
+        <span className="text-[10px] text-mute">{tm} · {MEALS.find(m => m.value === mt)?.label}</span>
+      </div>
+
+      {/* Gemini link */}
+      <a href={`https://gemini.google.com/app?q=${encodeURIComponent(`${fn} bao nhiêu calories protein fat carbs`)}`} target="_blank" rel="noopener noreferrer"
+        className="flex items-center justify-center gap-2 w-full py-2.5 mb-2.5 bg-blue2 border border-blue/20 text-blue rounded-lg text-[11px] font-bold min-h-[44px] active:scale-95">
+        <Ic d={P.target} size={14} /> Hỏi Gemini tính dinh dưỡng
+      </a>
+
+      <div className="grid grid-cols-2 gap-1.5 mb-2">
+        <input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Calories" className={ic} />
+        <input type="number" value={pro} onChange={e => setPro(e.target.value)} placeholder="Protein (g)" className={ic} />
+        <input type="number" value={fat} onChange={e => setFat(e.target.value)} placeholder="Fat (g)" className={ic} />
+        <input type="number" value={carb} onChange={e => setCarb(e.target.value)} placeholder="Carbs (g)" className={ic} />
+      </div>
+      <div className="mb-2.5"><MoneyIn value={price} onChange={setPrice} placeholder="Giá tiền" /></div>
+      {pp != null && pp > 0 && <div className="flex items-center gap-1 bg-gold2 text-gold border border-gold/20 rounded-md px-2 py-1 text-[10px] font-medium mb-2 a-pop"><Ic d={P.wallet} size={11} /> Vào chi tiêu</div>}
+      <div className="flex gap-2">
+        <button onClick={() => setStep(1)} className="py-2.5 px-4 rounded-lg bg-bg2 border border-line text-mute font-bold active:scale-[0.98] min-h-[48px]">← Quay lại</button>
+        <button onClick={doSave} className="flex-1 py-2.5 rounded-lg bg-ink text-bg font-bold active:scale-[0.98] min-h-[48px]">Thêm bữa ăn</button>
+      </div>
+    </>)}
   </Wrap>);
 }
 
