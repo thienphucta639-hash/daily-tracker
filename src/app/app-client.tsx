@@ -1550,173 +1550,155 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
   );
 }
 
-/* ═══ PET ASSISTANT — wolf companion ═══ */
+/* ═══ PET ASSISTANT — Jay Wolf ═══ */
 const PET_TALKS = [
-  "Hôm nay làm gì rồi? Kể nghe đi! 🐺",
-  "Track đều thì thành công thôi! 💪",
-  "Đã ăn gì chưa? Nhớ ghi lại nha!",
-  "Cố lên, đừng phá chuỗi! 🔥",
-  "Ngày nào cũng tiến bộ 1% nhé!",
-  "Uống nước chưa? Nhớ uống nha! 💧",
-  "Giỏi lắm, tiếp tục track nhé! ✨",
-  "Hít thở sâu, thư giãn 1 chút! 🧘",
-  "Plan ngày mai chưa? Lên luôn đi!",
-  "Xem lại chi tiêu hôm nay đi! 💰",
-  "Tập thể dục chưa? Đi tập nào! 🏃",
-  "Nghỉ ngơi cũng quan trọng nha! 😴",
-  "Chia sẻ 1 điều vui hôm nay đi!",
-  "Mình luôn ở đây nhắc bạn nha! 🐾",
-  "Bạn đang làm tốt lắm rồi! 🌟",
-  "Nhớ check thói quen hôm nay!",
-  "Đã hoàn thành kế hoạch chưa? ✅",
-  "Ngủ đủ giấc nha, mai lại chiến! 🌙",
-  "Focus vào việc quan trọng nhất!",
-  "Mỗi bước nhỏ đều có giá trị! 🐺",
+  "Yo! Hôm nay kế hoạch gì?", "Track đi rồi nghỉ!", "Đã ăn chưa? Ghi lại nè!",
+  "Chuỗi ngày đẹp lắm, giữ nha!", "Ngày mới, cơ hội mới!", "Uống nước đi bạn!",
+  "Keep going! Đang tốt lắm!", "Thở sâu, relax 1 chút!", "Plan ngày mai chưa?",
+  "Chi tiêu hôm nay ổn không?", "Đi tập chưa? Go go!", "Nghỉ ngơi cũng cần thiết!",
+  "Kể chuyện vui đi!", "Luôn ở đây với bạn!", "Bạn đang làm tốt rồi!",
+  "Check thói quen nào!", "Plan xong chưa?", "Ngủ sớm nha, mai chiến tiếp!",
+  "Focus thôi! Tắt hết distraction!", "Mỗi ngày 1% tốt hơn!",
+  "Gym chưa? Đi nào!", "Ghi chú gì nhanh đi!", "Hôm nay vui không?",
+  "Đừng quên track chi tiêu!", "Weekend mà, thư giãn đi!", "Lên kế hoạch tuần sau!",
+  "Ăn healthy nha!", "Đọc sách chưa?", "Jay Wolf tin bạn!",
 ];
 
 function PetAssistant() {
   const [bubble, setBubble] = useState<string | null>(null);
-  const [showBoard, setShowBoard] = useState(false);
+  const [board, setBoard] = useState(false);
   const [show, setShow] = useState(false);
-  const [talkIdx, setTalkIdx] = useState(0);
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const allReminders = S.getReminders().filter(r => !r.seen).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
-  const todayReminders = S.getActiveReminders();
+  const [idx, setIdx] = useState(0);
+  const longRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const allRem = S.getReminders().filter(r => !r.seen).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
+  const todayRem = S.getActiveReminders();
 
   useEffect(() => {
     const t = setTimeout(() => {
       setShow(true);
-      // Auto show today reminders or greeting
-      if (todayReminders.length > 0) {
-        setBubble(`📌 ${todayReminders.length} nhắc nhở hôm nay! Nhấn giữ để xem.`);
-      } else {
-        setBubble(PET_TALKS[Math.floor(Math.random() * PET_TALKS.length)]);
-      }
-    }, 800);
+      setBubble(todayRem.length > 0 ? `Có ${todayRem.length} nhắc nhở! Giữ mình để xem.` : PET_TALKS[Math.floor(Math.random() * PET_TALKS.length)]);
+      setTimeout(() => setBubble(null), 5000);
+    }, 600);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleTap = () => {
-    if (showBoard) { setShowBoard(false); return; }
-    // Cycle through talks without repeating consecutive
-    let next = (talkIdx + 1 + Math.floor(Math.random() * 3)) % PET_TALKS.length;
-    if (next === talkIdx) next = (next + 1) % PET_TALKS.length;
-    setTalkIdx(next);
-    setBubble(PET_TALKS[next]);
-    // Auto hide after 4s
+  const tap = () => {
+    if (longRef.current) { longRef.current = false; return; }
+    if (board) { setBoard(false); return; }
+    let n = (idx + 1 + Math.floor(Math.random() * 4)) % PET_TALKS.length;
+    if (n === idx) n = (n + 1) % PET_TALKS.length;
+    setIdx(n); setBubble(PET_TALKS[n]);
     setTimeout(() => setBubble(null), 4000);
   };
 
-  const handlePressStart = () => {
-    pressTimer.current = setTimeout(() => {
-      setShowBoard(true);
-      setBubble(null);
-    }, 500);
+  const pressStart = () => {
+    longRef.current = false;
+    timerRef.current = setTimeout(() => { longRef.current = true; setBoard(true); setBubble(null); }, 400);
   };
-  const handlePressEnd = () => {
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-  };
+  const pressEnd = () => { if (timerRef.current) clearTimeout(timerRef.current); };
 
-  const dismissReminder = (id: string) => {
-    S.markReminderSeen(id);
-    setShowBoard(false);
-    setTimeout(() => setShowBoard(true), 100);
-  };
+  const dismiss = (id: string) => { S.markReminderSeen(id); setBoard(false); setTimeout(() => setBoard(true), 50); };
 
   if (!show) return null;
 
   return (
-    <div className="fixed bottom-20 right-3 z-40 flex flex-col items-end gap-2 sm:bottom-8" style={{ maxWidth: "280px" }}>
-      {/* Reminder board — long press */}
-      {showBoard && (
-        <div className="bg-card border border-line rounded-xl shadow-2xl a-pop max-w-[270px] max-h-[50vh] overflow-y-auto">
-          <div className="px-3 py-2 border-b border-line flex items-center justify-between sticky top-0 bg-card">
-            <span className="text-[10px] font-bold">🔔 Nhắc nhở sắp tới</span>
-            <button onClick={() => setShowBoard(false)} className="text-mute hover:text-ink"><Ic d={P.x} size={12} /></button>
+    <div className="fixed bottom-20 right-2 z-40 flex flex-col items-end gap-1.5 sm:bottom-8 select-none" style={{ maxWidth: "260px", WebkitUserSelect: "none", touchAction: "none" }}>
+      {/* Board — long press */}
+      {board && (
+        <div className="bg-card border border-line rounded-xl shadow-2xl a-pop w-[250px] max-h-[45vh] overflow-y-auto">
+          <div className="px-3 py-2 border-b border-line flex items-center justify-between sticky top-0 bg-card z-10">
+            <span className="text-[10px] font-bold">Nhắc nhở</span>
+            <button onClick={() => setBoard(false)} className="min-w-[32px] min-h-[32px] flex items-center justify-center text-mute hover:text-ink"><Ic d={P.x} size={14} /></button>
           </div>
-          {allReminders.length === 0 ? (
-            <div className="px-3 py-4 text-center text-mute text-[10px]">Chưa có nhắc nhở nào</div>
-          ) : (
-            <div className="divide-y divide-line/30">
-              {allReminders.map(r => (
-                <div key={r.id} className="px-3 py-2" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold text-ink">{r.planTitle}</div>
-                      <div className="text-[9px] text-mute tnum">
-                        {r.planDate}{r.planTime ? ` · ${r.planTime}` : " · Cả ngày"}
-                        {r.remindAt !== formatDate(new Date()) && ` · Nhắc: ${fmtDateDisp(r.remindAt)}`}
-                      </div>
-                      {r.planDetail && <div className="text-[9px] text-mute mt-0.5">{r.planDetail}</div>}
-                      {r.attachment && <div className="text-[9px] text-blue mt-0.5">📎 {r.attachment}</div>}
-                    </div>
-                    <button onClick={() => dismissReminder(r.id)} className="text-mute hover:text-green shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"><Ic d={P.check} size={12} /></button>
-                  </div>
+          {allRem.length === 0 ? (
+            <div className="px-3 py-6 text-center text-mute text-[10px]">Chưa có nhắc nhở</div>
+          ) : allRem.map(r => (
+            <div key={r.id} className="px-3 py-2 border-b border-line/30 last:border-0" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-bold">{r.planTitle}</div>
+                  <div className="text-[9px] text-mute tnum">{r.planDate}{r.planTime ? ` · ${r.planTime}` : ""}</div>
+                  {r.planDetail && <div className="text-[9px] text-mute">{r.planDetail}</div>}
+                  {r.attachment && <div className="text-[9px] text-blue">📎 {r.attachment}</div>}
                 </div>
-              ))}
+                <button onClick={() => dismiss(r.id)} className="min-w-[32px] min-h-[32px] flex items-center justify-center text-mute hover:text-green"><Ic d={P.check} size={13} /></button>
+              </div>
             </div>
-          )}
+          ))}
         </div>
       )}
 
-      {/* Speech bubble — tap */}
-      {bubble && !showBoard && (
-        <div className="bg-card border border-line rounded-xl px-3 py-2 shadow-lg a-pop max-w-[220px] relative">
+      {/* Bubble */}
+      {bubble && !board && (
+        <div className="bg-card border border-line rounded-xl px-3 py-2 shadow-lg a-pop max-w-[200px]">
           <div className="text-[11px] text-ink leading-relaxed">{bubble}</div>
-          {todayReminders.length > 0 && (
-            <button onClick={() => { S.markAllRemindersSeen(); setBubble("Đã ghi nhận! 🐺"); setTimeout(() => setBubble(null), 2000); }}
-              className="mt-1.5 w-full py-1 bg-ink text-bg rounded-md text-[9px] font-bold active:scale-95">Đã xem ✓</button>
+          {todayRem.length > 0 && (
+            <button onClick={() => { S.markAllRemindersSeen(); setBubble("OK!"); setTimeout(() => setBubble(null), 1500); }}
+              className="mt-1 w-full py-1 bg-ink text-bg rounded-md text-[9px] font-bold active:scale-95 min-h-[32px]">Đã xem</button>
           )}
-          {/* Triangle pointer */}
-          <div className="absolute -bottom-1.5 right-5 w-3 h-3 bg-card border-r border-b border-line rotate-45" />
         </div>
       )}
 
-      {/* Wolf pet — SVG */}
-      <button
-        onClick={handleTap}
-        onMouseDown={handlePressStart} onMouseUp={handlePressEnd} onMouseLeave={handlePressEnd}
-        onTouchStart={handlePressStart} onTouchEnd={handlePressEnd}
-        className="w-14 h-14 rounded-full shadow-xl flex items-center justify-center active:scale-90 transition-transform relative"
-        style={{ animation: "petFloat 4s ease-in-out infinite", background: "linear-gradient(135deg, #2a2a2a, #1a1a1a)" }}
+      {/* Pet — flat 2D cute wolf */}
+      <div
+        onClick={tap}
+        onMouseDown={pressStart} onMouseUp={pressEnd} onMouseLeave={pressEnd}
+        onTouchStart={pressStart} onTouchEnd={e => { e.preventDefault(); pressEnd(); }}
+        onContextMenu={e => e.preventDefault()}
+        className="w-13 h-13 cursor-pointer active:scale-90 transition-transform relative"
+        style={{ animation: "petBob 2.5s ease-in-out infinite", width: 52, height: 52, userSelect: "none", WebkitUserSelect: "none" }}
       >
-        {/* Wolf face SVG */}
-        <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
-          {/* Ears */}
-          <path d="M10 20L16 6l6 14" fill="#555" stroke="#888" strokeWidth="1.5"/>
-          <path d="M38 20L32 6l-6 14" fill="#555" stroke="#888" strokeWidth="1.5"/>
+        <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+          {/* Shadow */}
+          <ellipse cx="26" cy="49" rx="12" ry="2" fill="#000" opacity="0.15"/>
+          {/* Body */}
+          <ellipse cx="26" cy="38" rx="10" ry="8" fill="#333"/>
           {/* Head */}
-          <ellipse cx="24" cy="28" rx="14" ry="12" fill="#444" stroke="#666" strokeWidth="1"/>
-          {/* Inner ears */}
-          <path d="M13 18l3-8 3 8" fill="#c66"/>
-          <path d="M35 18l-3-8-3 8" fill="#c66"/>
+          <circle cx="26" cy="22" r="13" fill="#3a3a3a"/>
+          {/* Left ear */}
+          <path d="M15 14L11 3l8 7" fill="#3a3a3a" stroke="#555" strokeWidth="0.5"/>
+          <path d="M14 12l-2-7 5 5" fill="#e8845c"/>
+          {/* Right ear */}
+          <path d="M37 14L41 3l-8 7" fill="#3a3a3a" stroke="#555" strokeWidth="0.5"/>
+          <path d="M38 12l2-7-5 5" fill="#e8845c"/>
+          {/* Face mask */}
+          <ellipse cx="26" cy="26" rx="7" ry="5" fill="#4a4a4a"/>
           {/* Eyes */}
-          <circle cx="19" cy="26" r="2.5" fill="#ffa502"/>
-          <circle cx="29" cy="26" r="2.5" fill="#ffa502"/>
-          <circle cx="19.5" cy="25.5" r="1" fill="#111"/>
-          <circle cx="29.5" cy="25.5" r="1" fill="#111"/>
-          {/* Eye shine */}
-          <circle cx="18.5" cy="25" r="0.6" fill="#fff" opacity="0.7"/>
-          <circle cx="28.5" cy="25" r="0.6" fill="#fff" opacity="0.7"/>
+          <ellipse cx="21" cy="20" rx="3" ry="3.2" fill="#111"/>
+          <ellipse cx="31" cy="20" rx="3" ry="3.2" fill="#111"/>
+          <circle cx="21" cy="20" r="2.2" fill="#ffa502"/>
+          <circle cx="31" cy="20" r="2.2" fill="#ffa502"/>
+          <circle cx="21.5" cy="19.5" r="1" fill="#111"/>
+          <circle cx="31.5" cy="19.5" r="1" fill="#111"/>
+          {/* Eye sparkle */}
+          <circle cx="20.3" cy="19" r="0.7" fill="#fff" opacity="0.8"/>
+          <circle cx="30.3" cy="19" r="0.7" fill="#fff" opacity="0.8"/>
           {/* Nose */}
-          <ellipse cx="24" cy="32" rx="2.5" ry="1.8" fill="#222"/>
+          <ellipse cx="26" cy="25" rx="2" ry="1.4" fill="#1a1a1a"/>
+          <circle cx="25.5" cy="24.6" r="0.4" fill="#333"/>
           {/* Mouth */}
-          <path d="M21 34q3 2 6 0" stroke="#888" strokeWidth="0.8" fill="none"/>
-          {/* Snout highlight */}
-          <ellipse cx="24" cy="30" rx="5" ry="3" fill="#555" opacity="0.3"/>
+          <path d="M24 27q2 1.5 4 0" stroke="#666" strokeWidth="0.7" fill="none" strokeLinecap="round"/>
+          {/* Cheeks */}
+          <circle cx="17" cy="24" r="2" fill="#e8845c" opacity="0.25"/>
+          <circle cx="35" cy="24" r="2" fill="#e8845c" opacity="0.25"/>
+          {/* Paws */}
+          <ellipse cx="20" cy="44" rx="4" ry="3" fill="#333"/>
+          <ellipse cx="32" cy="44" rx="4" ry="3" fill="#333"/>
+          <ellipse cx="20" cy="45" rx="2.5" ry="1.5" fill="#4a4a4a"/>
+          <ellipse cx="32" cy="45" rx="2.5" ry="1.5" fill="#4a4a4a"/>
         </svg>
-        {/* Notification dot */}
-        {todayReminders.length > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red rounded-full flex items-center justify-center text-[8px] text-bg font-bold a-blink border border-bg">{todayReminders.length}</span>
+        {/* Badge */}
+        {todayRem.length > 0 && (
+          <span className="absolute top-0 right-0 w-5 h-5 bg-red rounded-full flex items-center justify-center text-[8px] text-bg font-bold a-blink border-2 border-bg">{todayRem.length}</span>
         )}
-      </button>
+      </div>
 
       <style>{`
-        @keyframes petFloat {
-          0%, 100% { transform: translateY(0) rotate(0deg); }
-          25% { transform: translateY(-4px) rotate(2deg); }
-          75% { transform: translateY(-2px) rotate(-1deg); }
+        @keyframes petBob {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
         }
       `}</style>
     </div>
