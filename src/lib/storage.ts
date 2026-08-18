@@ -517,3 +517,131 @@ export function applySchedule(scheduleId: string, date: string) {
     addPlan({ date, time: block.time, title: block.title, detail: block.endTime ? `${block.time}–${block.endTime}` : null, category: block.category, priority: 0, budget: null });
   });
 }
+
+// ═══ STREAK V2 — 4 lives per month ═══
+export interface StreakData {
+  currentStreak: number;
+  lives: number; // 0-4
+  monthKey: string; // "2025-08"
+  reviveUsed: string[]; // dates where life was used
+  lostAt: string | null; // date streak was permanently lost
+}
+
+export function getStreakV2(): StreakData {
+  const raw = localStorage.getItem("t_streak_v2");
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  let data: StreakData = raw ? JSON.parse(raw) : { currentStreak: 0, lives: 4, monthKey, reviveUsed: [], lostAt: null };
+
+  // Reset lives on new month
+  if (data.monthKey !== monthKey) {
+    data.monthKey = monthKey;
+    data.lives = 4;
+    data.reviveUsed = [];
+    data.lostAt = null;
+  }
+
+  // Recalculate streak from data
+  const dates = new Set<string>();
+  getMeals().forEach(m => dates.add(m.date));
+  getActivities().forEach(a => dates.add(a.date));
+  getExpenses().forEach(e => dates.add(e.date));
+
+  const today = formatDate(now);
+  const yesterday = formatDate(new Date(now.getTime() - 86400000));
+
+  if (data.lostAt) {
+    // Streak permanently lost this month
+    data.currentStreak = 0;
+  } else if (dates.has(today)) {
+    // Tracked today — count streak
+    let streak = 0;
+    const d = new Date();
+    while (dates.has(formatDate(d)) || data.reviveUsed.includes(formatDate(d))) {
+      streak++;
+      d.setDate(d.getDate() - 1);
+    }
+    data.currentStreak = streak;
+  } else if (dates.has(yesterday)) {
+    // Didn't track today yet but tracked yesterday — streak still alive
+    let streak = 0;
+    const d = new Date(now.getTime() - 86400000);
+    while (dates.has(formatDate(d)) || data.reviveUsed.includes(formatDate(d))) {
+      streak++;
+      d.setDate(d.getDate() - 1);
+    }
+    data.currentStreak = streak;
+  } else {
+    // Missed yesterday — check if can revive
+    if (data.lives > 0 && data.currentStreak > 0) {
+      // Auto-use a life to save streak
+      data.lives--;
+      data.reviveUsed.push(yesterday);
+    } else if (data.currentStreak > 0 && data.lives <= 0) {
+      data.lostAt = today;
+      data.currentStreak = 0;
+    }
+  }
+
+  localStorage.setItem("t_streak_v2", JSON.stringify(data));
+  return data;
+}
+
+export function reviveStreak(): boolean {
+  const data = getStreakV2();
+  if (data.lives <= 0) return false;
+  // Already handled in getStreakV2
+  return true;
+}
+
+// ═══ PLAN REMINDERS ═══
+export interface PlanReminder {
+  id: string;
+  planId: string;
+  planDate: string;
+  planTitle: string;
+  planTime: string | null;
+  planDetail: string | null;
+  remindAt: string; // ISO date string for when to remind
+  color: string; // hex color
+  attachment: string | null; // file name or note
+  seen: boolean;
+  createdAt: string;
+}
+
+export function getReminders(): PlanReminder[] { return load<PlanReminder>("t_reminders"); }
+export function getActiveReminders(): PlanReminder[] {
+  const now = formatDate(new Date());
+  return load<PlanReminder>("t_reminders").filter(r => !r.seen && r.remindAt <= now);
+}
+export function addReminder(r: Omit<PlanReminder, "id" | "seen" | "createdAt">): PlanReminder {
+  const all = load<PlanReminder>("t_reminders");
+  const n: PlanReminder = { ...r, id: uid(), seen: false, createdAt: new Date().toISOString() };
+  all.push(n); save("t_reminders", all); return n;
+}
+export function markReminderSeen(id: string) {
+  const all = load<PlanReminder>("t_reminders");
+  const r = all.find(x => x.id === id);
+  if (r) r.seen = true;
+  save("t_reminders", all);
+}
+export function markAllRemindersSeen() {
+  const all = load<PlanReminder>("t_reminders");
+  all.forEach(r => r.seen = true);
+  save("t_reminders", all);
+}
+export function deleteReminder(id: string) {
+  save("t_reminders", load<PlanReminder>("t_reminders").filter(r => r.id !== id));
+}
+
+// ═══ PET GREETING ═══
+export function getTodayGreeting(): string {
+  const h = new Date().getHours();
+  const greetings = h < 12
+    ? ["Chào buổi sáng! Hôm nay track gì nào? 💪", "Ngày mới tràn đầy năng lượng! 🔥", "Sáng rồi, lên kế hoạch thôi! ✨"]
+    : h < 18
+    ? ["Buổi chiều vui vẻ! Đã track gì chưa? 📋", "Cố lên, còn nửa ngày nữa! 💪", "Đừng quên ghi lại bữa trưa nhé! 🍜"]
+    : ["Tối rồi, xem lại ngày hôm nay nào! 📊", "Đã hoàn thành hết plan chưa? ✅", "Nghỉ ngơi sớm nha! 🌙"];
+  return greetings[Math.floor(Math.random() * greetings.length)];
+}

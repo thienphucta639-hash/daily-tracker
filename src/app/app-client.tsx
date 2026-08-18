@@ -52,6 +52,7 @@ export default function App() {
   const [col, setCol] = useState<Record<string, boolean>>({});
   const [img, setImg] = useState<string | null>(null);
   const [streak, setStreak] = useState(0);
+  const [streakLives, setStreakLives] = useState(4);
   const [habits, setHabits] = useState<S.Habit[]>([]);
   const [habitChecks, setHabitChecks] = useState<S.HabitCheck[]>([]);
   const [qnotes, setQnotes] = useState<S.QuickNote[]>([]);
@@ -74,7 +75,8 @@ export default function App() {
 
   const reload = useCallback(() => {
     setMeals(S.getMeals(date)); setActs(S.getActivities(date)); setExps(S.getExpenses(date));
-    setStatus(S.getDailyStatus(date)); setStreak(S.getStreak());
+    setStatus(S.getDailyStatus(date));
+    const sv2 = S.getStreakV2(); setStreak(sv2.currentStreak); setStreakLives(sv2.lives);
     const l = S.getLiveTracks();
     setLive(l.active);
     // Only show tracked sessions that belong to the currently viewed date
@@ -244,6 +246,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-bold tracking-tight uppercase">Jay Tracker</h1>
               {streak > 0 && <span className="flex items-center gap-0.5 bg-gold/15 text-gold px-1.5 py-0.5 rounded text-[10px] font-bold tnum"><Ic d={P.flame} size={11} sw={2.5} />{streak}</span>}
+              <span className="flex items-center gap-0.5 text-[9px] text-mute tnum">{Array.from({length: 4}, (_, i) => <span key={i} className={i < streakLives ? "text-red" : "text-line"}>♥</span>)}</span>
             </div>
             <div className="flex items-center gap-2">
               {/* LIVE CLOCK — always running */}
@@ -612,6 +615,9 @@ export default function App() {
       {modal === "addPlan" && <AddPlanModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
       {modal === "addSchedule" && <AddScheduleModal onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
 
+      {/* PET ASSISTANT */}
+      <PetAssistant />
+
       {/* IMAGE VIEWER */}
       {img && (
         <div className="fixed inset-0 bg-bg/95 z-50 flex items-center justify-center p-4 a-pop" onClick={() => setImg(null)}>
@@ -938,11 +944,15 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
         <span className="text-[10px] text-mute">{tm} · {MEALS.find(m => m.value === mt)?.label}</span>
       </div>
 
-      {/* Gemini link */}
-      <a href={`https://gemini.google.com/app?q=${encodeURIComponent(`${fn} bao nhiêu calories protein fat carbs`)}`} target="_blank" rel="noopener noreferrer"
-        className="flex items-center justify-center gap-2 w-full py-2.5 mb-2.5 bg-blue2 border border-blue/20 text-blue rounded-lg text-[11px] font-bold min-h-[44px] active:scale-95">
-        <Ic d={P.target} size={14} /> Hỏi Gemini tính dinh dưỡng
-      </a>
+      {/* Gemini — copy prompt + open app */}
+      <button type="button" onClick={() => {
+        const prompt = `Tính dinh dưỡng món "${fn}": bao nhiêu calories, protein (g), fat (g), carbs (g)? Trả lời ngắn gọn chỉ số.`;
+        navigator.clipboard?.writeText(prompt).catch(() => {});
+        window.open("https://gemini.google.com/app", "_blank");
+      }} className="flex items-center justify-center gap-2 w-full py-2.5 mb-1 bg-blue2 border border-blue/20 text-blue rounded-lg text-[11px] font-bold min-h-[44px] active:scale-95">
+        <Ic d={P.target} size={14} /> Hỏi Gemini — đã copy nội dung
+      </button>
+      <div className="text-[9px] text-mute text-center mb-2.5">Bấm → mở Gemini + tự copy câu hỏi. Dán và chụp ảnh món ăn.</div>
 
       <div className="grid grid-cols-2 gap-1.5 mb-2">
         <input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Calories" className={ic} />
@@ -1242,6 +1252,10 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
   const [priority, setPriority] = useState(0);
   const [budgetStr, setBudgetStr] = useState("");
   const budgetParsed = parseMoney(budgetStr);
+  const [remind, setRemind] = useState(false);
+  const [remindDate, setRemindDate] = useState(date);
+  const [remindColor, setRemindColor] = useState("#ffa502");
+  const [remindNote, setRemindNote] = useState("");
 
   const allCats = [...ACTS, ...EXPS.filter(e => !ACTS.some(a => a.value === e.value))];
   const quickPlans = [
@@ -1280,7 +1294,37 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
         <button type="button" key={p.v} onClick={() => setPriority(p.v)} className={`flex-1 py-2 rounded-md text-[10px] font-bold min-h-[40px] transition-all border ${priority === p.v ? "bg-ink text-bg border-ink" : `bg-bg2 ${p.c}`}`}>{p.l}</button>
       ))}
     </div>
-    <button type="button" onClick={() => { if (!title.trim()) return; S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed }); onDone(); }} disabled={!title.trim()} className="w-full py-3 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-sm">Thêm kế hoạch</button>
+    {/* Reminder */}
+    <div className="mb-2.5">
+      <button type="button" onClick={() => setRemind(!remind)} className={`w-full py-2 rounded-md text-[10px] font-bold min-h-[40px] transition-all border ${remind ? "bg-gold2 border-gold/30 text-gold" : "bg-bg2 border-line text-mute"}`}>
+        🔔 {remind ? "Nhắc nhở: BẬT" : "Thêm nhắc nhở"}
+      </button>
+      {remind && (
+        <div className="mt-1.5 bg-bg2 rounded-lg p-2 border border-line space-y-1.5">
+          <div className="flex gap-1.5">
+            <input type="date" value={remindDate} onChange={e => setRemindDate(e.target.value)} className="flex-1 px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none min-h-[40px]" />
+            <input type="color" value={remindColor} onChange={e => setRemindColor(e.target.value)} className="w-10 h-10 rounded-md border border-line cursor-pointer" />
+          </div>
+          <input type="text" value={remindNote} onChange={e => setRemindNote(e.target.value)} placeholder="Ghi chú thêm / đính kèm" className="w-full px-2 py-1.5 rounded-md bg-card border border-line text-xs outline-none" />
+          <div className="grid grid-cols-4 gap-1">
+            {[
+              { l: "Ngày mai", d: 1 }, { l: "3 ngày", d: 3 }, { l: "1 tuần", d: 7 }, { l: "1 tháng", d: 30 },
+            ].map(p => (
+              <button key={p.l} type="button" onClick={() => setRemindDate(addDaysStr(formatDate(new Date()), p.d))}
+                className="py-1.5 rounded-md bg-card border border-line text-[9px] font-bold text-mute min-h-[32px] active:scale-95">{p.l}</button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+    <button type="button" onClick={() => {
+      if (!title.trim()) return;
+      const plan = S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed });
+      if (remind) {
+        S.addReminder({ planId: plan.id, planDate: date, planTitle: title.trim(), planTime: time || null, planDetail: detail.trim() || null, remindAt: remindDate, color: remindColor, attachment: remindNote.trim() || null });
+      }
+      onDone();
+    }} disabled={!title.trim()} className="w-full py-3 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-sm">Thêm kế hoạch</button>
   </Wrap>);
 }
 
@@ -1502,6 +1546,179 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══ PET ASSISTANT — wolf companion ═══ */
+const PET_TALKS = [
+  "Hôm nay làm gì rồi? Kể nghe đi! 🐺",
+  "Track đều thì thành công thôi! 💪",
+  "Đã ăn gì chưa? Nhớ ghi lại nha!",
+  "Cố lên, đừng phá chuỗi! 🔥",
+  "Ngày nào cũng tiến bộ 1% nhé!",
+  "Uống nước chưa? Nhớ uống nha! 💧",
+  "Giỏi lắm, tiếp tục track nhé! ✨",
+  "Hít thở sâu, thư giãn 1 chút! 🧘",
+  "Plan ngày mai chưa? Lên luôn đi!",
+  "Xem lại chi tiêu hôm nay đi! 💰",
+  "Tập thể dục chưa? Đi tập nào! 🏃",
+  "Nghỉ ngơi cũng quan trọng nha! 😴",
+  "Chia sẻ 1 điều vui hôm nay đi!",
+  "Mình luôn ở đây nhắc bạn nha! 🐾",
+  "Bạn đang làm tốt lắm rồi! 🌟",
+  "Nhớ check thói quen hôm nay!",
+  "Đã hoàn thành kế hoạch chưa? ✅",
+  "Ngủ đủ giấc nha, mai lại chiến! 🌙",
+  "Focus vào việc quan trọng nhất!",
+  "Mỗi bước nhỏ đều có giá trị! 🐺",
+];
+
+function PetAssistant() {
+  const [bubble, setBubble] = useState<string | null>(null);
+  const [showBoard, setShowBoard] = useState(false);
+  const [show, setShow] = useState(false);
+  const [talkIdx, setTalkIdx] = useState(0);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const allReminders = S.getReminders().filter(r => !r.seen).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
+  const todayReminders = S.getActiveReminders();
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setShow(true);
+      // Auto show today reminders or greeting
+      if (todayReminders.length > 0) {
+        setBubble(`📌 ${todayReminders.length} nhắc nhở hôm nay! Nhấn giữ để xem.`);
+      } else {
+        setBubble(PET_TALKS[Math.floor(Math.random() * PET_TALKS.length)]);
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleTap = () => {
+    if (showBoard) { setShowBoard(false); return; }
+    // Cycle through talks without repeating consecutive
+    let next = (talkIdx + 1 + Math.floor(Math.random() * 3)) % PET_TALKS.length;
+    if (next === talkIdx) next = (next + 1) % PET_TALKS.length;
+    setTalkIdx(next);
+    setBubble(PET_TALKS[next]);
+    // Auto hide after 4s
+    setTimeout(() => setBubble(null), 4000);
+  };
+
+  const handlePressStart = () => {
+    pressTimer.current = setTimeout(() => {
+      setShowBoard(true);
+      setBubble(null);
+    }, 500);
+  };
+  const handlePressEnd = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+  };
+
+  const dismissReminder = (id: string) => {
+    S.markReminderSeen(id);
+    setShowBoard(false);
+    setTimeout(() => setShowBoard(true), 100);
+  };
+
+  if (!show) return null;
+
+  return (
+    <div className="fixed bottom-20 right-3 z-40 flex flex-col items-end gap-2 sm:bottom-8" style={{ maxWidth: "280px" }}>
+      {/* Reminder board — long press */}
+      {showBoard && (
+        <div className="bg-card border border-line rounded-xl shadow-2xl a-pop max-w-[270px] max-h-[50vh] overflow-y-auto">
+          <div className="px-3 py-2 border-b border-line flex items-center justify-between sticky top-0 bg-card">
+            <span className="text-[10px] font-bold">🔔 Nhắc nhở sắp tới</span>
+            <button onClick={() => setShowBoard(false)} className="text-mute hover:text-ink"><Ic d={P.x} size={12} /></button>
+          </div>
+          {allReminders.length === 0 ? (
+            <div className="px-3 py-4 text-center text-mute text-[10px]">Chưa có nhắc nhở nào</div>
+          ) : (
+            <div className="divide-y divide-line/30">
+              {allReminders.map(r => (
+                <div key={r.id} className="px-3 py-2" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-bold text-ink">{r.planTitle}</div>
+                      <div className="text-[9px] text-mute tnum">
+                        {r.planDate}{r.planTime ? ` · ${r.planTime}` : " · Cả ngày"}
+                        {r.remindAt !== formatDate(new Date()) && ` · Nhắc: ${fmtDateDisp(r.remindAt)}`}
+                      </div>
+                      {r.planDetail && <div className="text-[9px] text-mute mt-0.5">{r.planDetail}</div>}
+                      {r.attachment && <div className="text-[9px] text-blue mt-0.5">📎 {r.attachment}</div>}
+                    </div>
+                    <button onClick={() => dismissReminder(r.id)} className="text-mute hover:text-green shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"><Ic d={P.check} size={12} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Speech bubble — tap */}
+      {bubble && !showBoard && (
+        <div className="bg-card border border-line rounded-xl px-3 py-2 shadow-lg a-pop max-w-[220px] relative">
+          <div className="text-[11px] text-ink leading-relaxed">{bubble}</div>
+          {todayReminders.length > 0 && (
+            <button onClick={() => { S.markAllRemindersSeen(); setBubble("Đã ghi nhận! 🐺"); setTimeout(() => setBubble(null), 2000); }}
+              className="mt-1.5 w-full py-1 bg-ink text-bg rounded-md text-[9px] font-bold active:scale-95">Đã xem ✓</button>
+          )}
+          {/* Triangle pointer */}
+          <div className="absolute -bottom-1.5 right-5 w-3 h-3 bg-card border-r border-b border-line rotate-45" />
+        </div>
+      )}
+
+      {/* Wolf pet — SVG */}
+      <button
+        onClick={handleTap}
+        onMouseDown={handlePressStart} onMouseUp={handlePressEnd} onMouseLeave={handlePressEnd}
+        onTouchStart={handlePressStart} onTouchEnd={handlePressEnd}
+        className="w-14 h-14 rounded-full shadow-xl flex items-center justify-center active:scale-90 transition-transform relative"
+        style={{ animation: "petFloat 4s ease-in-out infinite", background: "linear-gradient(135deg, #2a2a2a, #1a1a1a)" }}
+      >
+        {/* Wolf face SVG */}
+        <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
+          {/* Ears */}
+          <path d="M10 20L16 6l6 14" fill="#555" stroke="#888" strokeWidth="1.5"/>
+          <path d="M38 20L32 6l-6 14" fill="#555" stroke="#888" strokeWidth="1.5"/>
+          {/* Head */}
+          <ellipse cx="24" cy="28" rx="14" ry="12" fill="#444" stroke="#666" strokeWidth="1"/>
+          {/* Inner ears */}
+          <path d="M13 18l3-8 3 8" fill="#c66"/>
+          <path d="M35 18l-3-8-3 8" fill="#c66"/>
+          {/* Eyes */}
+          <circle cx="19" cy="26" r="2.5" fill="#ffa502"/>
+          <circle cx="29" cy="26" r="2.5" fill="#ffa502"/>
+          <circle cx="19.5" cy="25.5" r="1" fill="#111"/>
+          <circle cx="29.5" cy="25.5" r="1" fill="#111"/>
+          {/* Eye shine */}
+          <circle cx="18.5" cy="25" r="0.6" fill="#fff" opacity="0.7"/>
+          <circle cx="28.5" cy="25" r="0.6" fill="#fff" opacity="0.7"/>
+          {/* Nose */}
+          <ellipse cx="24" cy="32" rx="2.5" ry="1.8" fill="#222"/>
+          {/* Mouth */}
+          <path d="M21 34q3 2 6 0" stroke="#888" strokeWidth="0.8" fill="none"/>
+          {/* Snout highlight */}
+          <ellipse cx="24" cy="30" rx="5" ry="3" fill="#555" opacity="0.3"/>
+        </svg>
+        {/* Notification dot */}
+        {todayReminders.length > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red rounded-full flex items-center justify-center text-[8px] text-bg font-bold a-blink border border-bg">{todayReminders.length}</span>
+        )}
+      </button>
+
+      <style>{`
+        @keyframes petFloat {
+          0%, 100% { transform: translateY(0) rotate(0deg); }
+          25% { transform: translateY(-4px) rotate(2deg); }
+          75% { transform: translateY(-2px) rotate(-1deg); }
+        }
+      `}</style>
     </div>
   );
 }
