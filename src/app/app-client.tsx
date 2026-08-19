@@ -836,50 +836,48 @@ function playAlarm() {
   } catch {}
 }
 
-/* ═══ RECENT LOG — always expanded, no click needed ═══ */
+/* ═══ RECENT LOG — compact, click to expand ═══ */
 function RecentLog({ currentDate }: { currentDate: string }) {
+  const [openDay, setOpenDay] = useState<string | null>(null);
   const logs = S.getRecentDayLogs(7);
-  const days = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0 || l.liveTracks.length > 0);
-  if (days.length <= 1) return null;
-
-  const gc = (v: string) => ACTS.find(x => x.value === v);
+  const allDays = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0 || l.liveTracks.length > 0);
+  if (allDays.length <= 1) return null;
+  const dayNames = ["CN","T2","T3","T4","T5","T6","T7"];
 
   return (
     <div className="bg-card rounded-lg border border-line overflow-hidden a-rise">
       <div className="px-2.5 py-1.5 border-b border-line flex items-center justify-between">
-        <span className="font-bold text-[11px]">Nhật ký gần đây</span>
-        <span className="text-[9px] text-mute tnum">{days.length} ngày</span>
+        <span className="font-bold text-[11px]">Nhật ký</span>
+        <span className="text-[9px] text-mute tnum">{allDays.length} ngày</span>
       </div>
-      <div className="divide-y divide-line/30">
-        {days.map(day => {
-          const cur = day.date === currentDate;
-          const exp = day.expenses.reduce((s, e) => s + e.amount, 0);
-          // Combine: short summary per type
-          const parts: string[] = [];
-          if (day.meals.length > 0) parts.push(`${day.meals.length} bữa ăn`);
-          if (day.activities.length > 0) parts.push(`${day.activities.length} hoạt động`);
-          if (day.liveTracks.length > 0) parts.push(`${day.liveTracks.length} tracking`);
-          if (day.expenses.length > 0) parts.push(`${day.expenses.length} chi tiêu`);
-          // Top items by name
-          const topItems = [
-            ...day.meals.slice(0, 2).map(m => m.foodName),
-            ...day.activities.slice(0, 2).map(a => a.title),
-          ];
-
-          return (
-            <div key={day.date} className={`px-2.5 py-1.5 ${cur ? "bg-ink/5" : ""}`}>
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className={`text-[10px] font-bold tnum ${cur ? "text-ink" : "text-mute"}`}>
-                  {new Date(day.date + "T00:00:00").getDate()}/{new Date(day.date + "T00:00:00").getMonth() + 1}
-                </span>
-                <span className="flex-1 h-px bg-line" />
-                {exp > 0 && <span className="text-[9px] text-red font-bold tnum">{fmtCurrency(exp)}</span>}
+      {allDays.map(day => {
+        const cur = day.date === currentDate;
+        const exp = day.expenses.reduce((s, e) => s + e.amount, 0);
+        const dd = new Date(day.date + "T00:00:00");
+        const isOpen = openDay === day.date;
+        return (
+          <div key={day.date} className={`border-b border-line/30 last:border-0 ${cur ? "bg-ink/5" : ""}`}>
+            <button onClick={() => setOpenDay(isOpen ? null : day.date)} className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left min-h-[36px]">
+              <span className={`text-[10px] font-bold tnum shrink-0 ${cur ? "text-ink" : "text-mute"}`}>{dayNames[dd.getDay()]} {dd.getDate()}/{dd.getMonth()+1}</span>
+              <span className="flex-1 flex gap-1 text-[9px] text-mute overflow-hidden">
+                {day.meals.length > 0 && <span className="shrink-0">🍽{day.meals.length}</span>}
+                {day.activities.length > 0 && <span className="shrink-0">📋{day.activities.length}</span>}
+                {day.liveTracks.length > 0 && <span className="shrink-0">⏱{day.liveTracks.length}</span>}
+              </span>
+              {exp > 0 && <span className="text-[9px] text-red font-bold tnum shrink-0">{fmtCurrency(exp)}</span>}
+              <Ic d={P.down} size={9} cls={`text-mute2 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} />
+            </button>
+            {isOpen && (
+              <div className="px-2.5 pb-1.5 space-y-0.5">
+                {day.liveTracks.map(t => <div key={t.id} className="text-[9px] text-mute pl-8">⏱ {t.title}</div>)}
+                {day.meals.map(m => <div key={m.id} className="text-[9px] text-mute pl-8">🍽 {m.foodName}{m.price ? ` · ${fmtCurrency(m.price)}` : ""}</div>)}
+                {day.activities.map(a => <div key={a.id} className="text-[9px] text-mute pl-8">{ACTS.find(x => x.value === a.category)?.emoji || "📋"} {a.title}</div>)}
+                {day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).map(e => <div key={e.id} className="text-[9px] text-mute pl-8">{EXPS.find(x => x.value === e.category)?.emoji || "💰"} {e.description} · {fmtCurrency(e.amount)}</div>)}
               </div>
-              <div className="text-[10px] text-mute leading-relaxed">{parts.join(" · ")}{topItems.length > 0 ? ` — ${topItems.join(", ")}` : ""}</div>
-            </div>
-          );
-        })}
-      </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1961,15 +1959,14 @@ function PetAssistant() {
       // Priority: plans > reminders > greeting
       const undonePlans = todayPlans.filter(p => !p.done);
       if (undonePlans.length > 0) {
-        setBubble(`Hôm nay có ${undonePlans.length} kế hoạch! ${undonePlans.slice(0, 2).map(p => p.title).join(", ")}${undonePlans.length > 2 ? "..." : ""}`);
-      } else if (todayRem.length >= 3) {
-        setBubble(PET_REMIND_INTROS[Math.floor(Math.random() * PET_REMIND_INTROS.length)] + ` (${todayRem.length} việc)`);
+        // Show plans as panel, not bubble — stays until dismissed
+        setBoard(true); setBoardTab("remind");
       } else if (todayRem.length > 0) {
-        setBubble(`Ê! Có ${todayRem.length} nhắc nhở nè. Giữ mình để xem chi tiết!`);
+        setBoard(true); setBoardTab("remind");
       } else {
         setBubble(PET_GREETINGS[Math.floor(Math.random() * PET_GREETINGS.length)]);
+        setTimeout(() => setBubble(null), 6000);
       }
-      setTimeout(() => setBubble(null), 6000);
     }, 600);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2047,24 +2044,95 @@ function PetAssistant() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {/* Tab: Reminders */}
-            {boardTab === "remind" && (
-              allRem.length === 0 ? <div className="px-3 py-6 text-center text-mute text-[10px]">Không có nhắc nhở</div> : allRem.map(r => {
-                const daysLeft = Math.round((new Date(r.planDate + "T00:00:00").getTime() - Date.now()) / 86400000);
-                return (
-                  <div key={r.id} className="px-3 py-2 border-b border-line/30 last:border-0" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold">{r.planTitle}</div>
-                        <div className="text-[9px] text-mute tnum">{fmtDateDisp(r.planDate)}{r.planTime ? ` · ${r.planTime}` : ""}{daysLeft > 0 ? ` · ${daysLeft} ngày nữa` : daysLeft === 0 ? " · HÔM NAY" : ""}</div>
-                        {r.planDetail && <div className="text-[9px] text-ink mt-0.5">{r.planDetail}</div>}
-                      </div>
-                      <button onClick={() => dismiss(r.id)} className="min-w-[32px] min-h-[32px] flex items-center justify-center text-mute hover:text-green rounded-md bg-bg2 border border-line"><Ic d={P.check} size={13} /></button>
+            {/* Tab: Nhắc nhở + Kế hoạch hôm nay + Tương lai */}
+            {boardTab === "remind" && (() => {
+              const undonePlans = todayPlans.filter(p => !p.done);
+              // Collect future plans + schedules
+              // future plans via getPlanDates
+              const futureDates = S.getPlanDates().filter(d => d > today).slice(0, 5);
+              const futureSchedules = S.getSchedules().filter(s => s.date && s.date > today).slice(0, 5);
+              const days = ["CN","T2","T3","T4","T5","T6","T7"];
+
+              return (
+                <div>
+                  {/* Today's plans */}
+                  {undonePlans.length > 0 && (
+                    <div className="px-3 py-2 border-b border-line bg-gold/5">
+                      <div className="text-[10px] font-bold text-gold mb-1">📋 Kế hoạch hôm nay ({undonePlans.length})</div>
+                      {undonePlans.map(p => (
+                        <div key={p.id} className="text-[10px] py-0.5 flex items-center gap-1.5">
+                          {p.time && <span className="tnum text-gold font-bold w-10 shrink-0">{p.time}</span>}
+                          <span className="flex-1 text-ink">{p.title}</span>
+                          {p.detail && <span className="text-mute text-[9px] truncate max-w-[60px]">{p.detail}</span>}
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                );
-              })
-            )}
+                  )}
+
+                  {/* Custom reminders */}
+                  {allRem.length > 0 && (
+                    <div className="border-b border-line">
+                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2">🔔 Nhắc nhở</div>
+                      {allRem.map(r => {
+                        const dl = Math.round((new Date(r.planDate + "T00:00:00").getTime() - Date.now()) / 86400000);
+                        return (
+                          <div key={r.id} className="px-3 py-1.5 border-b border-line/20 last:border-0" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
+                            <div className="flex items-start gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[10px] font-bold">{r.planTitle}</div>
+                                <div className="text-[9px] text-mute tnum">{fmtDateDisp(r.planDate)}{r.planTime ? ` · ${r.planTime}` : ""}{dl > 0 ? ` · ${dl} ngày nữa` : " · HÔM NAY"}</div>
+                              </div>
+                              <button onClick={() => dismiss(r.id)} className="min-w-[28px] min-h-[28px] flex items-center justify-center text-mute hover:text-green rounded-md bg-bg2 border border-line"><Ic d={P.check} size={11} /></button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Future plans */}
+                  {futureDates.length > 0 && (
+                    <div className="border-b border-line">
+                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2">📅 Kế hoạch sắp tới</div>
+                      {futureDates.map(d => {
+                        const plans = S.getPlans(d);
+                        const dd = new Date(d + "T00:00:00");
+                        const dl = Math.round((dd.getTime() - Date.now()) / 86400000);
+                        return (
+                          <div key={d} className="px-3 py-1.5 border-b border-line/20 last:border-0">
+                            <div className="text-[10px] font-bold">{days[dd.getDay()]} {dd.getDate()}/{dd.getMonth()+1}/{dd.getFullYear()} <span className="text-mute font-normal">· {dl} ngày nữa</span></div>
+                            {plans.slice(0, 3).map(p => (
+                              <div key={p.id} className="text-[9px] text-mute py-0.5 pl-2">{p.time || "—"} {p.title}</div>
+                            ))}
+                            {plans.length > 3 && <div className="text-[8px] text-mute pl-2">+{plans.length - 3} mục nữa</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Future schedules */}
+                  {futureSchedules.length > 0 && (
+                    <div>
+                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2">⏰ TKB sắp tới</div>
+                      {futureSchedules.map(s => {
+                        const dd = s.date ? new Date(s.date + "T00:00:00") : null;
+                        return (
+                          <div key={s.id} className="px-3 py-1.5 border-b border-line/20 last:border-0">
+                            <div className="text-[10px] font-bold">{s.name} {dd ? `· ${days[dd.getDay()]} ${dd.getDate()}/${dd.getMonth()+1}` : ""}</div>
+                            <div className="text-[9px] text-mute">{s.items.map(b => `${b.time} ${b.title}`).join(" · ")}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {undonePlans.length === 0 && allRem.length === 0 && futureDates.length === 0 && futureSchedules.length === 0 && (
+                    <div className="px-3 py-6 text-center text-mute text-[10px]">Không có nhắc nhở hay kế hoạch</div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Tab: Today Stats — with macros */}
             {boardTab === "stats" && (() => {
