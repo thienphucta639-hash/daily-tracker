@@ -484,10 +484,12 @@ export function updatePlanResult(id: string, result: string) {
 export function deletePlan(id: string) {
   save("t_plans", load<PlanItem>("t_plans").filter(p => p.id !== id));
 }
-// Copy plans from one date to another
+// Copy plans from one date to another (only to today or future)
 export function copyPlans(fromDate: string, toDate: string) {
+  const today = formatDate(new Date());
+  if (toDate < today) return; // Can't copy to past
   const src = getPlans(fromDate);
-  src.forEach(p => addPlan({ date: toDate, time: p.time, title: p.title, detail: p.detail, category: p.category, priority: p.priority || 0, budget: p.budget }));
+  src.forEach(p => addPlan({ date: toDate, time: p.time, title: p.title, detail: p.detail, category: p.category, priority: p.priority || 0, budget: p.budget, sourceId: p.id }));
 }
 // Get dates that have plans
 export function getPlanDates(): string[] {
@@ -648,4 +650,27 @@ export function getTodayGreeting(): string {
     ? ["Buổi chiều vui vẻ! Đã track gì chưa? 📋", "Cố lên, còn nửa ngày nữa! 💪", "Đừng quên ghi lại bữa trưa nhé! 🍜"]
     : ["Tối rồi, xem lại ngày hôm nay nào! 📊", "Đã hoàn thành hết plan chưa? ✅", "Nghỉ ngơi sớm nha! 🌙"];
   return greetings[Math.floor(Math.random() * greetings.length)];
+}
+
+// ═══ MEAL PRESETS — saved nutrition templates (key: t_meal_presets) ═══
+export interface MealPreset {
+  id: string;
+  name: string;
+  calories: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+}
+
+export function getMealPresets(): MealPreset[] { return load<MealPreset>("t_meal_presets"); }
+export function addMealPreset(p: Omit<MealPreset, "id">): MealPreset {
+  const all = load<MealPreset>("t_meal_presets");
+  // Don't duplicate by name
+  const exists = all.find(x => x.name.toLowerCase() === p.name.toLowerCase());
+  if (exists) { Object.assign(exists, p); save("t_meal_presets", all); return exists; }
+  const n: MealPreset = { ...p, id: uid() };
+  all.push(n); save("t_meal_presets", all); return n;
+}
+export function deleteMealPreset(id: string) {
+  save("t_meal_presets", load<MealPreset>("t_meal_presets").filter(p => p.id !== id));
 }

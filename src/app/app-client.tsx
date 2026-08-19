@@ -118,7 +118,13 @@ export default function App() {
   useEffect(() => {
     if (!live) { setElapsed(0); return; }
     const tick = () => setElapsed(Date.now() - new Date(live.startedAt).getTime());
-    tick(); const i = setInterval(tick, 1000); return () => clearInterval(i);
+    tick(); const i = setInterval(tick, 1000);
+    // Wake Lock — keep screen on while tracking
+    let wl: WakeLockSentinel | null = null;
+    if ("wakeLock" in navigator) {
+      (navigator as Navigator & { wakeLock: { request: (t: string) => Promise<WakeLockSentinel> } }).wakeLock.request("screen").then(s => { wl = s; }).catch(() => {});
+    }
+    return () => { clearInterval(i); if (wl) wl.release().catch(() => {}); };
   }, [live]);
 
   // Global iPhone keyboard fix: any focused input auto-scrolls into visible area
@@ -210,7 +216,21 @@ export default function App() {
     return { time, cs };
   };
 
-  const del = (t: string, id: string) => { if (!confirm("Xóa?")) return; if (t === "m") S.deleteMeal(id); if (t === "a") S.deleteActivity(id); if (t === "e") S.deleteExpense(id); reload(); };
+  const del = (t: string, id: string) => {
+    if (!confirm("Xóa?")) return;
+    if (t === "m") {
+      // Find matching auto-created expense and delete it too
+      const meal = meals.find(m => m.id === id);
+      if (meal?.price && meal.price > 0) {
+        const matchExp = exps.find(e => e.category === "food" && e.description === meal.foodName && e.amount === meal.price);
+        if (matchExp) S.deleteExpense(matchExp.id);
+      }
+      S.deleteMeal(id);
+    }
+    if (t === "a") S.deleteActivity(id);
+    if (t === "e") S.deleteExpense(id);
+    reload();
+  };
   const totCal = meals.reduce((s, m) => s + (m.calories || 0), 0);
   const totExp = exps.reduce((s, e) => s + e.amount, 0);
   const totAct = acts.reduce((s, a) => s + (a.durationMinutes || 0), 0);
@@ -610,13 +630,15 @@ export default function App() {
         ) : tab === "plan" ? (
           <>
             {/* ═══ PLANNER TAB ═══ */}
-            {/* Schedule templates */}
-            <ScheduleSection date={date} onApply={reload} />
+            {/* Schedule templates + copy — only for today or future */}
+            {date >= formatDate(new Date()) && (
+              <>
+                <ScheduleSection date={date} onApply={reload} />
+                <CopyPlansSection currentDate={date} onCopy={reload} />
+              </>
+            )}
 
-            {/* Copy plans from another day */}
-            <CopyPlansSection currentDate={date} onCopy={reload} />
-
-            {/* Today's plan */}
+            {/* Plan list */}
             <PlanList plans={plans} date={date} onChanged={reload} onAdd={() => setModal("addPlan")} />
           </>
         ) : null}
@@ -709,31 +731,46 @@ function Sec({ title, icon, count, c, onT, onA, extra, children }: { title: stri
 }
 
 /* ═══ ALARM SOUND — used by timer in header ═══ */
+let audioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext {
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+// Warm up audio on first user interaction (needed for iOS)
+if (typeof window !== "undefined") {
+  const warmUp = () => { try { getAudioCtx(); } catch {} window.removeEventListener("touchstart", warmUp); window.removeEventListener("click", warmUp); };
+  window.addEventListener("touchstart", warmUp, { once: true });
+  window.addEventListener("click", warmUp, { once: true });
+}
+
 function playAlarm() {
   try {
-    const ac = new AudioContext();
-    const beep = (freq: number, start: number, dur: number, vol: number) => {
+    const ac = getAudioCtx();
+    const tone = (freq: number, start: number, dur: number, vol: number, type: OscillatorType = "square") => {
       const o = ac.createOscillator();
       const g = ac.createGain();
-      o.type = "square";
+      o.type = type;
       o.frequency.value = freq;
       g.gain.setValueAtTime(vol, ac.currentTime + start);
+      g.gain.setValueAtTime(vol, ac.currentTime + start + dur * 0.8);
       g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + start + dur);
       o.connect(g); g.connect(ac.destination);
       o.start(ac.currentTime + start);
       o.stop(ac.currentTime + start + dur);
     };
-    // Pattern: tít-tít-tít (pause) tít-tít-tít (pause) tít-tít-tít — 3 rounds
-    for (let round = 0; round < 3; round++) {
-      const base = round * 1.5;
-      beep(1000, base, 0.1, 0.35);
-      beep(1000, base + 0.2, 0.1, 0.35);
-      beep(1000, base + 0.4, 0.1, 0.35);
-      // Higher pitch on 3rd beep each round
-      beep(1400, base + 0.6, 0.15, 0.3);
+    // iPhone-style alarm: loud, urgent, 6 rounds
+    for (let r = 0; r < 6; r++) {
+      const b = r * 0.9;
+      tone(880, b, 0.08, 0.8);
+      tone(880, b + 0.12, 0.08, 0.8);
+      tone(1100, b + 0.24, 0.08, 0.9);
+      tone(1100, b + 0.36, 0.08, 0.9);
+      tone(1320, b + 0.5, 0.12, 1.0, "sawtooth");
     }
-    // Final long beep
-    beep(1200, 4.5, 0.4, 0.3);
+    // Long final alert
+    tone(1000, 5.5, 0.6, 0.9);
+    tone(1500, 5.5, 0.6, 0.7, "sawtooth");
   } catch { /* blocked */ }
 }
 
@@ -1008,10 +1045,29 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
       </div>
     </>) : (<>
       {/* Step 2: Nutrition + price */}
-      <div className="bg-bg2 rounded-lg px-2.5 py-1.5 mb-2.5 flex items-center justify-between">
+      <div className="bg-bg2 rounded-lg px-2.5 py-1.5 mb-2 flex items-center justify-between">
         <span className="text-[11px] font-medium">{fn}</span>
         <span className="text-[10px] text-mute">{tm} · {MEALS.find(m => m.value === mt)?.label}</span>
       </div>
+
+      {/* Saved presets — quick fill */}
+      {(() => {
+        const presets = S.getMealPresets();
+        return presets.length > 0 ? (
+          <div className="mb-2">
+            <div className="text-[9px] text-mute font-bold mb-1">Chỉ số đã lưu:</div>
+            <div className="flex gap-1 overflow-x-auto pb-0.5">
+              {presets.map(p => (
+                <button key={p.id} type="button" onClick={() => { setCal(String(p.calories)); setPro(String(p.protein)); setFat(String(p.fat)); setCarb(String(p.carbs)); }}
+                  className="shrink-0 px-2 py-1.5 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[36px] active:scale-95 hover:border-ink text-left">
+                  <div>{p.name}</div>
+                  <div className="text-[8px] text-mute font-normal tnum">{p.calories}cal P{p.protein} F{p.fat} C{p.carbs}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      })()}
 
       {/* Gemini — copy prompt + open app */}
       <button type="button" onClick={() => {
@@ -1041,12 +1097,23 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
         <div className="text-[8px] text-mute">Copy kết quả Gemini → dán vào ô trên → tự điền số bên dưới</div>
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5 mb-2">
+      <div className="grid grid-cols-2 gap-1.5 mb-1.5">
         <input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Calories" className={ic} />
         <input type="number" value={pro} onChange={e => setPro(e.target.value)} placeholder="Protein (g)" className={ic} />
         <input type="number" value={fat} onChange={e => setFat(e.target.value)} placeholder="Fat (g)" className={ic} />
         <input type="number" value={carb} onChange={e => setCarb(e.target.value)} placeholder="Carbs (g)" className={ic} />
       </div>
+      {/* Save as preset */}
+      {(cal || pro || fat || carb) && (
+        <button type="button" onClick={() => {
+          const name = prompt("Tên preset (VD: 2 trứng 1 chuối):", fn);
+          if (name?.trim()) {
+            S.addMealPreset({ name: name.trim(), calories: parseInt(cal) || 0, protein: parseInt(pro) || 0, fat: parseInt(fat) || 0, carbs: parseInt(carb) || 0 });
+          }
+        }} className="w-full py-1.5 mb-2 bg-green2 border border-green/20 text-green rounded-md text-[9px] font-bold min-h-[36px] active:scale-95">
+          Lưu chỉ số này để dùng lại
+        </button>
+      )}
       <div className="mb-2.5"><MoneyIn value={price} onChange={setPrice} placeholder="Giá tiền" /></div>
       {pp != null && pp > 0 && <div className="flex items-center gap-1 bg-gold2 text-gold border border-gold/20 rounded-md px-2 py-1 text-[10px] font-medium mb-2 a-pop"><Ic d={P.wallet} size={11} /> Vào chi tiêu</div>}
       <div className="flex gap-2">
@@ -1599,6 +1666,7 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
   const totalBudget = plans.reduce((s, p) => s + (p.budget || 0), 0);
   const doneCount = plans.filter(p => p.done).length;
   const pct = plans.length > 0 ? Math.round((doneCount / plans.length) * 100) : 0;
+  const isPast = date < formatDate(new Date());
 
   const priorityBadge = (p: number) => {
     if (p === 2) return <span className="text-[8px] bg-red/15 text-red border border-red/20 px-1 py-0.5 rounded font-bold shrink-0">GẤP</span>;
@@ -1616,8 +1684,9 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
     <div className="bg-card rounded-lg border border-line overflow-hidden">
       <div className="flex items-center px-2.5 py-2 gap-2 border-b border-line">
         <span className="font-bold text-xs flex-1">Kế hoạch ngày</span>
+        {isPast && <span className="text-[9px] text-mute">Đã qua</span>}
         <span className="text-[9px] text-mute tnum">{doneCount}/{plans.length}</span>
-        <button onClick={onAdd} className="w-8 h-8 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90"><Ic d={P.plus} size={13} sw={2.5} /></button>
+        {!isPast && <button onClick={onAdd} className="w-8 h-8 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90"><Ic d={P.plus} size={13} sw={2.5} /></button>}
       </div>
 
       {/* Next upcoming reminder */}
@@ -1636,7 +1705,7 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
           {plans.map(p => (
             <div key={p.id} className="px-2.5 py-2 group">
               <div className="flex items-start gap-2.5">
-                <button onClick={() => { S.togglePlan(p.id); onChanged(); }} className={`w-7 h-7 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${p.done ? "bg-green border-green text-bg" : (p.priority || 0) >= 2 ? "border-red" : (p.priority || 0) >= 1 ? "border-gold" : "border-line hover:border-ink"}`}>
+                <button onClick={() => { if (!isPast) { S.togglePlan(p.id); onChanged(); } }} disabled={isPast} className={`w-7 h-7 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${isPast ? "opacity-50" : ""} ${p.done ? "bg-green border-green text-bg" : (p.priority || 0) >= 2 ? "border-red" : (p.priority || 0) >= 1 ? "border-gold" : "border-line hover:border-ink"}`}>
                   {p.done && <Ic d={P.check} size={13} sw={3} />}
                 </button>
                 <div className="flex-1 min-w-0">
@@ -1663,11 +1732,11 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
                   )}
                   {/* Day note — rep/set/custom note for this day only */}
                   {p.dayNote && <div className="mt-1 text-[10px] text-blue bg-blue2 border border-blue/20 rounded px-1.5 py-0.5">📝 {p.dayNote}</div>}
-                  {!p.done && (
+                  {!p.done && !isPast && (
                     <button onClick={() => { const n = prompt("Ghi chú hôm nay (rep, set, số lượng...):", p.dayNote || ""); if (n !== null) { S.updatePlanDayNote(p.id, n); onChanged(); } }} className="mt-1 text-[9px] text-mute hover:text-ink">+ Ghi chú ngày</button>
                   )}
                 </div>
-                <button onClick={() => { S.deletePlan(p.id); onChanged(); }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-1 min-w-[28px] min-h-[28px] flex items-center justify-center"><Ic d={P.x} size={12} /></button>
+                {!isPast && <button onClick={() => { S.deletePlan(p.id); onChanged(); }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-1 min-w-[28px] min-h-[28px] flex items-center justify-center"><Ic d={P.x} size={12} /></button>}
               </div>
             </div>
           ))}
