@@ -52,7 +52,7 @@ export default function App() {
   const [col, setCol] = useState<Record<string, boolean>>({});
   const [img, setImg] = useState<string | null>(null);
   const [streak, setStreak] = useState(0);
-  const [streakLives, setStreakLives] = useState(4);
+  const [streakBroken, setStreakBroken] = useState<string | null>(null);
   const [habits, setHabits] = useState<S.Habit[]>([]);
   const [habitChecks, setHabitChecks] = useState<S.HabitCheck[]>([]);
   const [qnotes, setQnotes] = useState<S.QuickNote[]>([]);
@@ -76,7 +76,7 @@ export default function App() {
   const reload = useCallback(() => {
     setMeals(S.getMeals(date)); setActs(S.getActivities(date)); setExps(S.getExpenses(date));
     setStatus(S.getDailyStatus(date));
-    const sv2 = S.getStreakV2(); setStreak(sv2.currentStreak); setStreakLives(sv2.lives);
+    const sv2 = S.getStreakV2(); setStreak(sv2.currentStreak); setStreakBroken(sv2.brokenAt);
     const l = S.getLiveTracks();
     setLive(l.active);
     // Only show tracked sessions that belong to the currently viewed date
@@ -274,7 +274,10 @@ export default function App() {
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-bold tracking-tight uppercase">Jay Tracker</h1>
               {streak > 0 && <span className="flex items-center gap-0.5 bg-gold/15 text-gold px-1.5 py-0.5 rounded text-[10px] font-bold tnum"><Ic d={P.flame} size={11} sw={2.5} />{streak}</span>}
-              <span className="flex items-center gap-0.5 text-[9px] text-mute tnum">{Array.from({length: 4}, (_, i) => <span key={i} className={i < streakLives ? "text-red" : "text-line"}>♥</span>)}</span>
+              {streakBroken && (() => {
+                const hrs = Math.max(0, 48 - Math.round((Date.now() - new Date(streakBroken).getTime()) / 3600000));
+                return <button onClick={() => { S.recoverStreak(); reload(); }} className="flex items-center gap-1 bg-red/15 text-red border border-red/30 px-1.5 py-0.5 rounded text-[9px] font-bold a-blink active:scale-95">Hồi phục ({hrs}h)</button>;
+              })()}
             </div>
             <div className="flex items-center gap-2">
               {/* LIVE CLOCK — always running */}
@@ -428,19 +431,40 @@ export default function App() {
                 <div className="space-y-1">
                   {habits.map(h => {
                     const ck = habitChecks.some(c => c.habitId === h.id);
+                    const hc = S.getHabitCheck(h.id, date);
                     const hs = S.getHabitStreak(h.id);
                     const isLate = isToday && !ck && new Date().getHours() >= 20;
-                    return (<div key={h.id} className={`flex items-start gap-2 py-1.5 group ${isLate ? "bg-red/5 -mx-2.5 px-2.5 rounded" : ""}`}>
-                      <button onClick={() => { S.toggleHabitCheck(h.id, date); reload(); }} className={`w-7 h-7 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${ck ? "bg-green border-green text-bg" : isLate ? "border-red" : "border-line hover:border-ink"}`}>{ck && <Ic d={P.check} size={13} sw={3} />}</button>
-                      <span className="text-xs mt-1">{h.emoji}</span>
-                      <div className="flex-1 min-w-0">
-                        <span className={`text-[12px] font-medium ${ck ? "line-through text-mute" : ""}`}>{h.name}</span>
-                        {h.description && <div className="text-[10px] text-mute mt-0.5 leading-tight">{h.description}</div>}
-                        {isLate && <div className="text-[9px] text-red font-bold mt-0.5">⚠ Chưa hoàn thành — sắp hết ngày!</div>}
+                    const hasTarget = h.target != null && h.target > 0;
+                    const progress = hc?.count || 0;
+                    const pct = hasTarget ? Math.min(100, Math.round((progress / (h.target || 1)) * 100)) : 0;
+                    return (<div key={h.id} className={`py-2 group ${isLate ? "bg-red/5 -mx-2.5 px-2.5 rounded" : ""}`}>
+                      <div className="flex items-start gap-2">
+                        <button onClick={() => { S.toggleHabitCheck(h.id, date); reload(); }} className={`w-7 h-7 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${ck ? "bg-green border-green text-bg" : isLate ? "border-red" : "border-line hover:border-ink"}`}>{ck && <Ic d={P.check} size={13} sw={3} />}</button>
+                        <span className="text-sm mt-0.5">{h.emoji}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-[12px] font-medium ${ck ? "line-through text-mute" : ""}`}>{h.name}</span>
+                            {hasTarget && <span className="text-[9px] bg-bg2 border border-line text-mute px-1 py-0.5 rounded tnum">{progress}/{h.target} {h.unit || ""}</span>}
+                          </div>
+                          {h.description && <div className="text-[10px] text-mute mt-0.5">{h.description}</div>}
+                          {hc?.note && <div className="text-[9px] text-blue bg-blue2 border border-blue/20 rounded px-1.5 py-0.5 mt-0.5">{hc.note}</div>}
+                          {isLate && <div className="text-[9px] text-red font-bold mt-0.5">⚠ Sắp hết ngày!</div>}
+                          {/* Progress bar for target habits */}
+                          {hasTarget && <div className="h-1 bg-bg2 rounded-full mt-1 overflow-hidden"><div className="h-full bg-green rounded-full transition-all" style={{ width: `${pct}%` }} /></div>}
+                        </div>
+                        {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum shrink-0 mt-0.5">{hs}🔥</span>}
                       </div>
-                      {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum shrink-0 mt-1">{hs}🔥</span>}
-                      {!ck && <button onClick={() => { if (confirm(`Dời "${h.name}" sang ngày mai?`)) { S.postponeHabit(h.id, date); reload(); } }} className="text-mute2 hover:text-ink opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Dời sang ngày mai"><Ic d={P.right} size={11} /></button>}
-                      <button onClick={() => { if (confirm("Xóa?")) { S.deleteHabit(h.id); reload(); } }} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 mt-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Xóa"><Ic d={P.x} size={11} /></button>
+                      {/* Action buttons */}
+                      <div className="flex gap-1 mt-1 pl-9">
+                        {hasTarget && !ck && <button onClick={() => { S.updateHabitCheck(h.id, date, progress + 1, hc?.note || null); if (progress + 1 >= (h.target || 1)) S.toggleHabitCheck(h.id, date); reload(); }}
+                          className="px-2 py-1 bg-bg2 border border-line rounded text-[9px] font-bold text-mute hover:text-ink min-h-[28px] active:scale-95">+1 {h.unit || ""}</button>}
+                        <button onClick={() => { const n = prompt("Ghi chú:", hc?.note || ""); if (n !== null) { S.updateHabitCheck(h.id, date, hc?.count || null, n); reload(); } }}
+                          className="px-2 py-1 bg-bg2 border border-line rounded text-[9px] font-bold text-mute hover:text-ink min-h-[28px] active:scale-95">📝</button>
+                        {!ck && <button onClick={() => { if (confirm(`Dời "${h.name}" sang ngày mai?`)) { S.postponeHabit(h.id, date); reload(); } }}
+                          className="px-2 py-1 bg-bg2 border border-line rounded text-[9px] font-bold text-mute hover:text-ink min-h-[28px] active:scale-95">→ Mai</button>}
+                        <button onClick={() => { if (confirm("Xóa?")) { S.deleteHabit(h.id); reload(); } }}
+                          className="px-2 py-1 bg-bg2 border border-line rounded text-[9px] font-bold text-mute hover:text-red min-h-[28px] active:scale-95"><Ic d={P.x} size={10} /></button>
+                      </div>
                     </div>);
                   })}
                 </div>
@@ -997,7 +1021,25 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
       }} className="flex items-center justify-center gap-2 w-full py-2.5 mb-1 bg-blue2 border border-blue/20 text-blue rounded-lg text-[11px] font-bold min-h-[44px] active:scale-95">
         <Ic d={P.target} size={14} /> Hỏi Gemini — đã copy nội dung
       </button>
-      <div className="text-[9px] text-mute text-center mb-2.5">Bấm → mở Gemini + tự copy câu hỏi. Dán và chụp ảnh món ăn.</div>
+      <div className="text-[9px] text-mute text-center mb-1.5">Bấm → mở Gemini + tự copy câu hỏi. Dán và chụp ảnh.</div>
+
+      {/* Paste from Gemini */}
+      <div className="mb-2">
+        <textarea placeholder="Dán kết quả từ Gemini vào đây..." rows={2}
+          className="w-full px-2 py-1.5 rounded-md bg-bg2 border border-line text-[10px] outline-none focus:border-ink resize-none mb-1"
+          onChange={e => {
+            const r = parseGeminiText(e.target.value);
+            if (r) {
+              if (r.cal) setCal(String(r.cal));
+              if (r.pro) setPro(String(r.pro));
+              if (r.fat) setFat(String(r.fat));
+              if (r.carbs) setCarb(String(r.carbs));
+              if (r.price) setPrice(String(r.price / 1000) + "k");
+            }
+          }}
+        />
+        <div className="text-[8px] text-mute">Copy kết quả Gemini → dán vào ô trên → tự điền số bên dưới</div>
+      </div>
 
       <div className="grid grid-cols-2 gap-1.5 mb-2">
         <input type="number" value={cal} onChange={e => setCal(e.target.value)} placeholder="Calories" className={ic} />
@@ -1051,11 +1093,34 @@ function AddHabitModal({ date, onDone, onClose }: { date: string; onDone: () => 
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("✅");
   const [desc, setDesc] = useState("");
+  const [targetStr, setTargetStr] = useState("");
+  const [unit, setUnit] = useState("");
+  const presets = [
+    { n: "Uống nước", e: "💧", d: "8 cốc/ngày", t: 8, u: "cốc" },
+    { n: "Tập gym", e: "💪", d: "Chest + Shoulder", t: 4, u: "sets" },
+    { n: "Đọc sách", e: "📖", d: "30 phút/ngày", t: 30, u: "phút" },
+    { n: "Chạy bộ", e: "🏃", d: "5km", t: 5, u: "km" },
+    { n: "Uống thuốc", e: "💊", d: "Sau bữa ăn", t: 1, u: "lần" },
+    { n: "Thiền", e: "🧘", d: "10 phút sáng", t: 10, u: "phút" },
+  ];
   return (<Wrap title="Thêm thói quen" onClose={onClose}>
-    <div className="flex gap-1.5 mb-2.5 flex-wrap">{["✅","📖","🏃","💊","🧘","💪","🚰","🎯","✍️","🛌","🧹","💤","🍎","🚫","💻"].map(e => (<button key={e} onClick={() => setEmoji(e)} className={`w-8 h-8 rounded-md flex items-center justify-center text-sm transition-all ${emoji === e ? "bg-ink text-bg scale-110" : "bg-bg2 border border-line"}`}>{e}</button>))}</div>
+    <div className="grid grid-cols-3 gap-1.5 mb-2.5">
+      {presets.map(p => (
+        <button key={p.n} type="button" onClick={() => { S.addHabit(p.n, p.e, p.d, date, p.t, p.u); onDone(); }}
+          className="flex flex-col items-center gap-0.5 py-2 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[52px] active:scale-95 hover:border-ink transition-all">
+          <span className="text-base">{p.e}</span><span>{p.n}</span><span className="text-[8px] text-mute font-normal">{p.t} {p.u}</span>
+        </button>
+      ))}
+    </div>
+    <div className="text-[9px] text-mute2 font-bold uppercase tracking-widest mb-1">Tự tạo:</div>
+    <div className="grid grid-cols-5 gap-1 mb-2">{["✅","📖","🏃","💊","🧘","💪","💧","🎯","✍️","🛌","🧹","💤","🍎","🚫","💻"].map(e => (<button key={e} type="button" onClick={() => setEmoji(e)} className={`h-8 rounded-md flex items-center justify-center text-sm transition-all ${emoji === e ? "bg-ink text-bg" : "bg-bg2 border border-line"}`}>{e}</button>))}</div>
     <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên thói quen" autoFocus className={`${ic} mb-2`} />
-    <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Chi tiết (mục tiêu, cách thực hiện...)" className={`${ic} mb-2.5`} />
-    <button onClick={() => { if (!name.trim()) return; S.addHabit(name.trim(), emoji, desc.trim() || null, date); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
+    <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Chi tiết / cách thực hiện" className={`${ic} mb-2`} />
+    <div className="flex gap-2 mb-2.5">
+      <input type="number" value={targetStr} onChange={e => setTargetStr(e.target.value)} placeholder="Mục tiêu" className={`${ic} flex-1`} />
+      <input type="text" value={unit} onChange={e => setUnit(e.target.value)} placeholder="Đơn vị (lần, phút, km...)" className={`${ic} flex-1`} />
+    </div>
+    <button type="button" onClick={() => { if (!name.trim()) return; S.addHabit(name.trim(), emoji, desc.trim() || null, date, targetStr ? parseInt(targetStr) : null, unit.trim() || null); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">Thêm thói quen</button>
   </Wrap>);
 }
 
@@ -1631,6 +1696,50 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
   );
 }
 
+/* ═══ GEMINI PASTE — parse nutrition from text ═══ */
+function parseGeminiText(text: string): { cal: number; pro: number; fat: number; carbs: number; price: number } | null {
+  const t = text.toLowerCase().replace(/,/g, ".").replace(/\s+/g, " ");
+  const findNum = (patterns: RegExp[]): number => {
+    for (const p of patterns) { const m = t.match(p); if (m) return Math.round(parseFloat(m[1])); }
+    return 0;
+  };
+  const cal = findNum([/(\d+\.?\d*)\s*(?:cal|kcal|calo)/i, /calories?\s*[:\-]?\s*(\d+)/i]);
+  const pro = findNum([/protein\s*[:\-]?\s*(\d+\.?\d*)/i, /đạm\s*[:\-]?\s*(\d+\.?\d*)/i, /(\d+\.?\d*)\s*g?\s*protein/i]);
+  const fat = findNum([/fat\s*[:\-]?\s*(\d+\.?\d*)/i, /chất béo\s*[:\-]?\s*(\d+\.?\d*)/i, /(\d+\.?\d*)\s*g?\s*fat/i]);
+  const carbs = findNum([/carb(?:s|ohydrate)?\s*[:\-]?\s*(\d+\.?\d*)/i, /tinh bột\s*[:\-]?\s*(\d+\.?\d*)/i, /(\d+\.?\d*)\s*g?\s*carb/i]);
+  if (cal === 0 && pro === 0 && fat === 0 && carbs === 0) return null;
+  const price = findNum([/(\d+)\s*(?:k|nghìn|ngàn|000đ)/i]);
+  return { cal, pro, fat, carbs, price: price > 0 ? price * 1000 : 0 };
+}
+
+function GeminiPasteTab({ onDone }: { onDone: () => void }) {
+  const [text, setText] = useState("");
+  const parsed = text.trim() ? parseGeminiText(text) : null;
+  const today = formatDate(new Date());
+
+  return (
+    <div className="p-3 space-y-2">
+      <div className="text-[10px] font-bold text-mute uppercase tracking-widest">Dán kết quả từ Gemini</div>
+      <div className="text-[9px] text-mute">Copy kết quả dinh dưỡng từ Gemini rồi dán vào đây:</div>
+      <textarea value={text} onChange={e => setText(e.target.value)} placeholder="Dán nội dung từ Gemini..." rows={3}
+        className="w-full px-2 py-2 rounded-md bg-bg2 border border-line text-[11px] outline-none focus:border-ink resize-none" />
+      {parsed && (
+        <div className="bg-bg2 rounded-lg p-2 border border-green/30">
+          <div className="text-[9px] text-green font-bold mb-1">Đã nhận diện:</div>
+          <div className="grid grid-cols-4 gap-1 text-center">
+            <div><div className="text-sm font-bold tnum text-gold">{parsed.cal}</div><div className="text-[8px] text-mute">Cal</div></div>
+            <div><div className="text-sm font-bold tnum text-blue">{parsed.pro}g</div><div className="text-[8px] text-mute">Pro</div></div>
+            <div><div className="text-sm font-bold tnum">{parsed.fat}g</div><div className="text-[8px] text-mute">Fat</div></div>
+            <div><div className="text-sm font-bold tnum">{parsed.carbs}g</div><div className="text-[8px] text-mute">Carb</div></div>
+          </div>
+        </div>
+      )}
+      {!parsed && text.trim() && <div className="text-[9px] text-red">Không tìm thấy số liệu. Thử dán lại.</div>}
+      <div className="text-[9px] text-mute">Nhận dạng: calories, protein, fat, carbs từ text Gemini. Bấm nút bên dưới để lưu.</div>
+    </div>
+  );
+}
+
 /* ═══ PET ASSISTANT ═══ */
 const PET_GREETINGS = [
   "Ê bro! Quay lại rồi hả? Let's go track ngày hôm nay nào! 🔥",
@@ -1668,12 +1777,20 @@ const PET_TALKS = [
 function PetAssistant() {
   const [bubble, setBubble] = useState<string | null>(null);
   const [board, setBoard] = useState(false);
+  const [boardTab, setBoardTab] = useState<"remind" | "stats" | "quick">("remind");
   const [show, setShow] = useState(false);
   const [idx, setIdx] = useState(0);
   const longRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allRem = S.getReminders().filter(r => !r.seen).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
   const todayRem = S.getActiveReminders();
+  const today = formatDate(new Date());
+  const todayMeals = S.getMeals(today);
+  const todayExps = S.getExpenses(today);
+  const todayActs = S.getActivities(today);
+  const todayCal = todayMeals.reduce((s, m) => s + (m.calories || 0), 0);
+  const todaySpent = todayExps.reduce((s, e) => s + e.amount, 0);
+  const streak = S.getStreakV2();
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -1694,10 +1811,30 @@ function PetAssistant() {
   const tap = () => {
     if (longRef.current) { longRef.current = false; return; }
     if (board) { setBoard(false); return; }
-    let n = (idx + 1 + Math.floor(Math.random() * 4)) % PET_TALKS.length;
-    if (n === idx) n = (n + 1) % PET_TALKS.length;
-    setIdx(n); setBubble(PET_TALKS[n]);
-    setTimeout(() => setBubble(null), 4000);
+
+    // Smart context-aware messages
+    const smart: string[] = [];
+    const h = new Date().getHours();
+    if (todayMeals.length === 0 && h >= 8) smart.push("Ê chưa ghi bữa ăn nào nè! Track đi bro!");
+    if (todayMeals.length === 0 && h >= 12) smart.push("Trưa rồi mà chưa ăn gì? Ghi lại đi!");
+    if (todayExps.length === 0 && h >= 15) smart.push("Hôm nay chưa ghi chi tiêu? Check lại nha!");
+    if (todayActs.length === 0 && h >= 18) smart.push("Tối rồi mà chưa track hoạt động nào luôn á!");
+    if (todayCal > 2000) smart.push(`Hôm nay ăn ${todayCal} cal rồi đó, coi chừng nha!`);
+    if (todaySpent > 200000) smart.push(`Đã chi ${fmtCurrency(todaySpent)} hôm nay rồi đó!`);
+    if (streak.currentStreak >= 7) smart.push(`${streak.currentStreak} ngày streak! Quá đỉnh bạn ơi! 🔥`);
+    if (streak.brokenAt) smart.push("Chuỗi đang gãy kìa! Hồi phục nhanh đi!");
+    if (allRem.length > 0) smart.push(`Có ${allRem.length} nhắc nhở đang chờ. Giữ mình để xem!`);
+
+    // Mix smart + random
+    const pool = smart.length > 0 && Math.random() < 0.6 ? smart : PET_TALKS;
+    let n = Math.floor(Math.random() * pool.length);
+    if (pool === PET_TALKS) {
+      n = (idx + 1 + Math.floor(Math.random() * 4)) % PET_TALKS.length;
+      if (n === idx) n = (n + 1) % PET_TALKS.length;
+      setIdx(n);
+    }
+    setBubble(pool[n]);
+    setTimeout(() => setBubble(null), 4500);
   };
 
   const pressStart = () => {
@@ -1712,35 +1849,88 @@ function PetAssistant() {
 
   return (
     <div className="fixed bottom-20 right-2 z-40 flex flex-col items-end gap-1.5 sm:bottom-8 select-none" style={{ maxWidth: "260px", WebkitUserSelect: "none", touchAction: "none" }}>
-      {/* Board — long press */}
+      {/* Board — long press — multi-tab */}
       {board && (
-        <div className="bg-card border border-line rounded-xl shadow-2xl a-pop w-[250px] max-h-[45vh] overflow-y-auto">
-          <div className="px-3 py-2 border-b border-line flex items-center justify-between sticky top-0 bg-card z-10">
-            <span className="text-[10px] font-bold">Nhắc nhở</span>
-            <button onClick={() => setBoard(false)} className="min-w-[32px] min-h-[32px] flex items-center justify-center text-mute hover:text-ink"><Ic d={P.x} size={14} /></button>
+        <div className="bg-card border border-line rounded-xl shadow-2xl a-pop w-[270px] max-h-[55vh] overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="px-2 py-1.5 border-b border-line flex items-center gap-1 shrink-0">
+            {[
+              { k: "remind" as const, l: `Nhắc (${allRem.length})` },
+              { k: "stats" as const, l: "Hôm nay" },
+              { k: "quick" as const, l: "Dán Gemini" },
+            ].map(t => (
+              <button key={t.k} onClick={() => setBoardTab(t.k)} className={`flex-1 py-1.5 rounded-md text-[9px] font-bold min-h-[32px] transition-all ${boardTab === t.k ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>{t.l}</button>
+            ))}
+            <button onClick={() => setBoard(false)} className="min-w-[32px] min-h-[32px] flex items-center justify-center text-mute hover:text-ink shrink-0"><Ic d={P.x} size={13} /></button>
           </div>
-          {allRem.length === 0 ? (
-            <div className="px-3 py-6 text-center text-mute text-[10px]">Chưa có nhắc nhở</div>
-          ) : allRem.map(r => {
-            const daysLeft = Math.round((new Date(r.planDate + "T00:00:00").getTime() - Date.now()) / 86400000);
-            return (
-              <div key={r.id} className="px-3 py-2.5 border-b border-line/30 last:border-0" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-bold">{r.planTitle}</div>
-                    <div className="text-[9px] text-mute tnum">
-                      {fmtDateDisp(r.planDate)}
-                      {r.planTime ? ` · ${r.planTime}` : " · Cả ngày"}
-                      {daysLeft > 0 ? ` · còn ${daysLeft} ngày` : daysLeft === 0 ? " · HÔM NAY" : ""}
+
+          <div className="flex-1 overflow-y-auto">
+            {/* Tab: Reminders */}
+            {boardTab === "remind" && (
+              allRem.length === 0 ? <div className="px-3 py-6 text-center text-mute text-[10px]">Không có nhắc nhở</div> : allRem.map(r => {
+                const daysLeft = Math.round((new Date(r.planDate + "T00:00:00").getTime() - Date.now()) / 86400000);
+                return (
+                  <div key={r.id} className="px-3 py-2 border-b border-line/30 last:border-0" style={{ borderLeftWidth: 3, borderLeftColor: r.color || "#ffa502" }}>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-bold">{r.planTitle}</div>
+                        <div className="text-[9px] text-mute tnum">{fmtDateDisp(r.planDate)}{r.planTime ? ` · ${r.planTime}` : ""}{daysLeft > 0 ? ` · ${daysLeft} ngày nữa` : daysLeft === 0 ? " · HÔM NAY" : ""}</div>
+                        {r.planDetail && <div className="text-[9px] text-ink mt-0.5">{r.planDetail}</div>}
+                      </div>
+                      <button onClick={() => dismiss(r.id)} className="min-w-[32px] min-h-[32px] flex items-center justify-center text-mute hover:text-green rounded-md bg-bg2 border border-line"><Ic d={P.check} size={13} /></button>
                     </div>
-                    {r.planDetail && <div className="text-[9px] text-ink mt-0.5">{r.planDetail}</div>}
-                    {r.attachment && <div className="text-[9px] text-blue mt-0.5">📎 {r.attachment}</div>}
                   </div>
-                  <button onClick={() => dismiss(r.id)} className="min-w-[36px] min-h-[36px] flex items-center justify-center text-mute hover:text-green rounded-md bg-bg2 border border-line"><Ic d={P.check} size={14} /></button>
+                );
+              })
+            )}
+
+            {/* Tab: Today Stats — with macros */}
+            {boardTab === "stats" && (() => {
+              const totPro = todayMeals.reduce((s, m) => s + (m.protein || 0), 0);
+              const totFat = todayMeals.reduce((s, m) => s + (m.fat || 0), 0);
+              const totCarb = todayMeals.reduce((s, m) => s + (m.carbs || 0), 0);
+              return (
+                <div className="p-3 space-y-2">
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <div className="bg-bg2 rounded-lg p-2 text-center border border-line">
+                      <div className="text-base font-bold tnum text-gold">{todayCal || "—"}</div>
+                      <div className="text-[8px] text-mute">Cal</div>
+                    </div>
+                    <div className="bg-bg2 rounded-lg p-2 text-center border border-line">
+                      <div className="text-base font-bold tnum text-blue">{totPro || "—"}</div>
+                      <div className="text-[8px] text-mute">Protein</div>
+                    </div>
+                    <div className="bg-bg2 rounded-lg p-2 text-center border border-line">
+                      <div className="text-base font-bold tnum">{totFat || "—"}</div>
+                      <div className="text-[8px] text-mute">Fat</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <div className="bg-bg2 rounded-lg p-2 text-center border border-line">
+                      <div className="text-base font-bold tnum">{totCarb || "—"}</div>
+                      <div className="text-[8px] text-mute">Carbs</div>
+                    </div>
+                    <div className="bg-bg2 rounded-lg p-2 text-center border border-line">
+                      <div className="text-base font-bold tnum text-red">{todaySpent > 0 ? fmtCurrency(todaySpent) : "—"}</div>
+                      <div className="text-[8px] text-mute">Chi tiêu</div>
+                    </div>
+                    <div className="bg-bg2 rounded-lg p-2 text-center border border-line">
+                      <div className="text-base font-bold tnum">{todayMeals.length}🍽 {todayActs.length}📋</div>
+                      <div className="text-[8px] text-mute">Ăn · Việc</div>
+                    </div>
+                  </div>
+                  {todayMeals.length > 0 && (
+                    <div className="text-[9px] text-mute">
+                      {todayMeals.map(m => m.foodName).join(", ")}
+                    </div>
+                  )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })()}
+
+            {/* Tab: Dán Gemini */}
+            {boardTab === "quick" && <GeminiPasteTab onDone={() => { setBubble("Đã lưu dinh dưỡng!"); setTimeout(() => setBubble(null), 2000); setBoard(false); }} />}
+          </div>
         </div>
       )}
 

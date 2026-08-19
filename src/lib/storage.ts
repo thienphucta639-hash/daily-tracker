@@ -66,13 +66,17 @@ export interface Habit {
   name: string;
   emoji: string;
   description: string | null;
-  date: string | null; // null = old habits (show on all days for backward compat)
+  date: string | null;
+  target: number | null; // target count (e.g. 3 sets, 8 glasses)
+  unit: string | null; // "sets", "lần", "phút", "cốc"
   createdAt: string;
 }
 
 export interface HabitCheck {
   habitId: string;
   date: string;
+  count: number | null; // how many done (null = simple check)
+  note: string | null; // progress note
 }
 
 // NEW: Quick notes timeline
@@ -211,9 +215,9 @@ export function getHabits(date?: string): Habit[] {
 export function getHabitsForDate(date: string): Habit[] {
   return load<Habit>("t_habits").filter(h => h.date === date);
 }
-export function addHabit(name: string, emoji: string, description?: string | null, date?: string): Habit {
+export function addHabit(name: string, emoji: string, description?: string | null, date?: string, target?: number | null, unit?: string | null): Habit {
   const all = load<Habit>("t_habits");
-  const n: Habit = { id: uid(), name, emoji, description: description || null, date: date || null, createdAt: new Date().toISOString() };
+  const n: Habit = { id: uid(), name, emoji, description: description || null, date: date || null, target: target || null, unit: unit || null, createdAt: new Date().toISOString() };
   all.push(n); save("t_habits", all); return n;
 }
 export function deleteHabit(id: string) {
@@ -228,7 +232,7 @@ export function postponeHabit(id: string, fromDate: string) {
   const next = new Date(fromDate + "T00:00:00");
   next.setDate(next.getDate() + 1);
   // Create copy for tomorrow
-  const n: Habit = { id: uid(), name: h.name, emoji: h.emoji, description: h.description, date: formatDate(next), createdAt: new Date().toISOString() };
+  const n: Habit = { id: uid(), name: h.name, emoji: h.emoji, description: h.description, date: formatDate(next), target: h.target || null, unit: h.unit || null, createdAt: new Date().toISOString() };
   all.push(n);
   // Remove from today
   const idx = all.indexOf(h);
@@ -241,8 +245,18 @@ export function getHabitChecks(date: string): HabitCheck[] {
 export function toggleHabitCheck(habitId: string, date: string) {
   const all = load<HabitCheck>("t_habit_checks");
   const i = all.findIndex(c => c.habitId === habitId && c.date === date);
-  if (i >= 0) all.splice(i, 1); else all.push({ habitId, date });
+  if (i >= 0) all.splice(i, 1); else all.push({ habitId, date, count: null, note: null });
   save("t_habit_checks", all);
+}
+export function updateHabitCheck(habitId: string, date: string, count: number | null, note: string | null) {
+  const all = load<HabitCheck>("t_habit_checks");
+  let c = all.find(x => x.habitId === habitId && x.date === date);
+  if (!c) { c = { habitId, date, count: null, note: null }; all.push(c); }
+  c.count = count; c.note = note;
+  save("t_habit_checks", all);
+}
+export function getHabitCheck(habitId: string, date: string): HabitCheck | null {
+  return load<HabitCheck>("t_habit_checks").find(c => c.habitId === habitId && c.date === date) || null;
 }
 export function getHabitStreak(habitId: string): number {
   const checks = load<HabitCheck>("t_habit_checks").filter(c => c.habitId === habitId);
@@ -518,80 +532,70 @@ export function applySchedule(scheduleId: string, date: string) {
   });
 }
 
-// ═══ STREAK V2 — 4 lives per month ═══
+// ═══ STREAK V3 — 48h recovery window ═══
 export interface StreakData {
   currentStreak: number;
-  lives: number; // 0-4
-  monthKey: string; // "2025-08"
-  reviveUsed: string[]; // dates where life was used
-  lostAt: string | null; // date streak was permanently lost
+  brokenAt: string | null; // ISO timestamp when streak broke
+  recoveredDates: string[]; // dates that were recovered
 }
 
 export function getStreakV2(): StreakData {
-  const raw = localStorage.getItem("t_streak_v2");
-  const now = new Date();
-  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const raw = localStorage.getItem("t_streak_v3");
+  let data: StreakData = raw ? JSON.parse(raw) : { currentStreak: 0, brokenAt: null, recoveredDates: [] };
 
-  let data: StreakData = raw ? JSON.parse(raw) : { currentStreak: 0, lives: 4, monthKey, reviveUsed: [], lostAt: null };
-
-  // Reset lives on new month
-  if (data.monthKey !== monthKey) {
-    data.monthKey = monthKey;
-    data.lives = 4;
-    data.reviveUsed = [];
-    data.lostAt = null;
-  }
-
-  // Recalculate streak from data
   const dates = new Set<string>();
   getMeals().forEach(m => dates.add(m.date));
   getActivities().forEach(a => dates.add(a.date));
   getExpenses().forEach(e => dates.add(e.date));
+  data.recoveredDates.forEach(d => dates.add(d));
 
+  const now = new Date();
   const today = formatDate(now);
   const yesterday = formatDate(new Date(now.getTime() - 86400000));
 
-  if (data.lostAt) {
-    // Streak permanently lost this month
-    data.currentStreak = 0;
-  } else if (dates.has(today)) {
-    // Tracked today — count streak
-    let streak = 0;
-    const d = new Date();
-    while (dates.has(formatDate(d)) || data.reviveUsed.includes(formatDate(d))) {
-      streak++;
-      d.setDate(d.getDate() - 1);
-    }
-    data.currentStreak = streak;
-  } else if (dates.has(yesterday)) {
-    // Didn't track today yet but tracked yesterday — streak still alive
-    let streak = 0;
-    const d = new Date(now.getTime() - 86400000);
-    while (dates.has(formatDate(d)) || data.reviveUsed.includes(formatDate(d))) {
-      streak++;
-      d.setDate(d.getDate() - 1);
-    }
-    data.currentStreak = streak;
-  } else {
-    // Missed yesterday — check if can revive
-    if (data.lives > 0 && data.currentStreak > 0) {
-      // Auto-use a life to save streak
-      data.lives--;
-      data.reviveUsed.push(yesterday);
-    } else if (data.currentStreak > 0 && data.lives <= 0) {
-      data.lostAt = today;
-      data.currentStreak = 0;
+  // Check if streak is broken (missed yesterday AND no recovery)
+  if (!dates.has(today) && !dates.has(yesterday) && data.currentStreak > 0) {
+    // Check if within 48h recovery window
+    if (!data.brokenAt) {
+      data.brokenAt = new Date().toISOString();
     }
   }
 
-  localStorage.setItem("t_streak_v2", JSON.stringify(data));
+  // If broken and past 48h → reset
+  if (data.brokenAt) {
+    const hoursElapsed = (Date.now() - new Date(data.brokenAt).getTime()) / 3600000;
+    if (hoursElapsed > 48) {
+      data.currentStreak = 0;
+      data.brokenAt = null;
+      data.recoveredDates = [];
+      localStorage.setItem("t_streak_v3", JSON.stringify(data));
+      return data;
+    }
+  }
+
+  // Count streak
+  let streak = 0;
+  const d = new Date();
+  if (!dates.has(formatDate(d))) d.setDate(d.getDate() - 1);
+  while (dates.has(formatDate(d))) { streak++; d.setDate(d.getDate() - 1); }
+  data.currentStreak = streak;
+
+  // If tracked today and was broken → recovered
+  if (dates.has(today) && data.brokenAt) {
+    data.brokenAt = null;
+  }
+
+  localStorage.setItem("t_streak_v3", JSON.stringify(data));
   return data;
 }
 
-export function reviveStreak(): boolean {
+export function recoverStreak(): boolean {
   const data = getStreakV2();
-  if (data.lives <= 0) return false;
-  // Already handled in getStreakV2
+  if (!data.brokenAt) return false;
+  const yesterday = formatDate(new Date(Date.now() - 86400000));
+  data.recoveredDates.push(yesterday);
+  data.brokenAt = null;
+  localStorage.setItem("t_streak_v3", JSON.stringify(data));
   return true;
 }
 
