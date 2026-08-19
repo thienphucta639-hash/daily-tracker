@@ -695,7 +695,7 @@ export default function App() {
       {modal === "addHabit" && <AddHabitModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
       {modal === "qn" && <QNModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
       {modal === "addPlan" && <AddPlanModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
-      {modal === "addSchedule" && <AddScheduleModal onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
+      {modal === "addSchedule" && <AddScheduleModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
 
       {/* PET ASSISTANT */}
       <PetAssistant />
@@ -732,19 +732,83 @@ function Sec({ title, icon, count, c, onT, onA, extra, children }: { title: stri
 
 /* ═══ ALARM SOUND — used by timer in header ═══ */
 let audioCtx: AudioContext | null = null;
+let alarmAudio: HTMLAudioElement | null = null;
+
 function getAudioCtx(): AudioContext {
   if (!audioCtx) audioCtx = new AudioContext();
   if (audioCtx.state === "suspended") audioCtx.resume();
   return audioCtx;
 }
+
+function buildAlarmDataUrl(): string {
+  const sr = 44100;
+  const duration = 5.5;
+  const samples = Math.floor(sr * duration);
+  const data = new Int16Array(samples);
+  const pattern = [0, 0.18, 0.36, 0.54, 1.0, 1.18, 1.36, 1.54, 2.0, 2.18, 2.36, 2.54, 3.0, 3.18, 3.36, 3.54, 4.0, 4.18, 4.36, 4.54];
+  for (let i = 0; i < samples; i++) {
+    const t = i / sr;
+    let v = 0;
+    for (const start of pattern) {
+      if (t >= start && t < start + 0.11) {
+        const local = t - start;
+        const env = 1 - local / 0.11;
+        const f = (Math.floor((start * 10) % 4) >= 2) ? 1320 : 980;
+        v += Math.sign(Math.sin(2 * Math.PI * f * t)) * env * 0.75;
+      }
+    }
+    if (t >= 4.9 && t < 5.35) {
+      const local = t - 4.9;
+      const env = 1 - local / 0.45;
+      v += Math.sin(2 * Math.PI * 1200 * t) * env * 0.7;
+    }
+    data[i] = Math.max(-1, Math.min(1, v)) * 32767;
+  }
+  const buffer = new ArrayBuffer(44 + data.length * 2);
+  const view = new DataView(buffer);
+  const writeStr = (o: number, s: string) => [...s].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
+  writeStr(0, "RIFF"); view.setUint32(4, 36 + data.length * 2, true); writeStr(8, "WAVE");
+  writeStr(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, sr, true); view.setUint32(28, sr * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+  writeStr(36, "data"); view.setUint32(40, data.length * 2, true);
+  let o = 44; data.forEach(v => { view.setInt16(o, v, true); o += 2; });
+  const bytes = new Uint8Array(buffer); let binary = ""; bytes.forEach(b => binary += String.fromCharCode(b));
+  return `data:audio/wav;base64,${btoa(binary)}`;
+}
+
+function ensureAlarmAudio() {
+  if (!alarmAudio) {
+    alarmAudio = new Audio(buildAlarmDataUrl());
+    alarmAudio.preload = "auto";
+  }
+  return alarmAudio;
+}
+
 // Warm up audio on first user interaction (needed for iOS)
 if (typeof window !== "undefined") {
-  const warmUp = () => { try { getAudioCtx(); } catch {} window.removeEventListener("touchstart", warmUp); window.removeEventListener("click", warmUp); };
+  const warmUp = () => {
+    try {
+      getAudioCtx();
+      const a = ensureAlarmAudio();
+      a.volume = 0;
+      a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = 1; }).catch(() => {});
+    } catch {}
+    window.removeEventListener("touchstart", warmUp);
+    window.removeEventListener("click", warmUp);
+  };
   window.addEventListener("touchstart", warmUp, { once: true });
   window.addEventListener("click", warmUp, { once: true });
 }
 
 function playAlarm() {
+  // Primary: HTMLAudio (more reliable on iPhone)
+  try {
+    const a = ensureAlarmAudio();
+    a.currentTime = 0;
+    a.volume = 1;
+    a.play().catch(() => {});
+  } catch {}
+  // Fallback / layering: WebAudio tone blast
   try {
     const ac = getAudioCtx();
     const tone = (freq: number, start: number, dur: number, vol: number, type: OscillatorType = "square") => {
@@ -759,19 +823,15 @@ function playAlarm() {
       o.start(ac.currentTime + start);
       o.stop(ac.currentTime + start + dur);
     };
-    // iPhone-style alarm: loud, urgent, 6 rounds
     for (let r = 0; r < 6; r++) {
       const b = r * 0.9;
-      tone(880, b, 0.08, 0.8);
-      tone(880, b + 0.12, 0.08, 0.8);
-      tone(1100, b + 0.24, 0.08, 0.9);
-      tone(1100, b + 0.36, 0.08, 0.9);
+      tone(980, b, 0.08, 0.9);
+      tone(980, b + 0.12, 0.08, 0.9);
+      tone(1100, b + 0.24, 0.08, 1.0);
+      tone(1100, b + 0.36, 0.08, 1.0);
       tone(1320, b + 0.5, 0.12, 1.0, "sawtooth");
     }
-    // Long final alert
-    tone(1000, 5.5, 0.6, 0.9);
-    tone(1500, 5.5, 0.6, 0.7, "sawtooth");
-  } catch { /* blocked */ }
+  } catch {}
 }
 
 /* ═══ RECENT LOG — always expanded, no click needed ═══ */
@@ -1523,7 +1583,7 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
 }
 
 /* ═══ ADD SCHEDULE TEMPLATE MODAL ═══ */
-function AddScheduleModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
+function AddScheduleModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
   const [name, setName] = useState("");
   const [blocks, setBlocks] = useState<S.ScheduleBlock[]>([
     { time: "06:00", endTime: "07:00", title: "Tập luyện", category: "exercise" },
@@ -1562,14 +1622,14 @@ function AddScheduleModal({ onDone, onClose }: { onDone: () => void; onClose: ()
       ))}
     </div>
     <button type="button" onClick={addBlock} className="w-full py-2.5 border border-dashed border-line rounded-lg text-[10px] text-mute hover:text-ink hover:border-ink font-bold mb-2.5 min-h-[44px]">+ Thêm khung giờ</button>
-    <button type="button" onClick={() => { if (!canSave) return; S.addSchedule(name.trim(), blocks.filter(b => b.time || b.title.trim())); onDone(); }} disabled={!canSave} className="w-full py-3 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-sm">Lưu thời khóa biểu</button>
+    <button type="button" onClick={() => { if (!canSave) return; S.addSchedule(name.trim(), blocks.filter(b => b.time || b.title.trim()), date); onDone(); }} disabled={!canSave} className="w-full py-3 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-sm">Lưu thời khóa biểu</button>
   </Wrap>);
 }
 
 /* ═══ SCHEDULE SECTION — templates + apply ═══ */
 function ScheduleSection({ date, onApply }: { date: string; onApply: () => void }) {
   const [modal, setModal] = useState(false);
-  const schedules = S.getSchedules();
+  const schedules = S.getSchedulesForDate(date);
 
   return (
     <div className="bg-card rounded-lg border border-line overflow-hidden">
@@ -1594,7 +1654,7 @@ function ScheduleSection({ date, onApply }: { date: string; onApply: () => void 
           ))}
         </div>
       )}
-      {modal && <AddScheduleModal onDone={() => { onApply(); setModal(false); }} onClose={() => setModal(false)} />}
+      {modal && <AddScheduleModal date={date} onDone={() => { onApply(); setModal(false); }} onClose={() => setModal(false)} />}
     </div>
   );
 }

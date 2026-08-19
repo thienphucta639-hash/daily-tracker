@@ -496,24 +496,32 @@ export function getPlanDates(): string[] {
   return Array.from(new Set(load<PlanItem>("t_plans").map(p => p.date))).sort().reverse();
 }
 
-// ═══ SCHEDULE TEMPLATES — reusable time blocks ═══
+// ═══ SCHEDULE TEMPLATES — reusable time blocks per day ═══
 export interface Schedule {
   id: string;
-  name: string; // e.g. "Gym", "Work day", "Weekend"
+  name: string;
+  date: string | null; // date it belongs to; null for old data
   items: ScheduleBlock[];
   createdAt: string;
 }
 export interface ScheduleBlock {
-  time: string; // HH:mm
+  time: string;
   endTime: string | null;
   title: string;
   category: string;
 }
 
 export function getSchedules(): Schedule[] { return load<Schedule>("t_schedules"); }
-export function addSchedule(name: string, items: ScheduleBlock[]): Schedule {
+export function getSchedulesForDate(date: string): Schedule[] {
+  return load<Schedule>("t_schedules").filter(s => {
+    if (s.date) return s.date === date;
+    // backward compat: old schedules without date belong to created day
+    return formatDate(new Date(s.createdAt)) === date;
+  });
+}
+export function addSchedule(name: string, items: ScheduleBlock[], date?: string): Schedule {
   const all = load<Schedule>("t_schedules");
-  const n: Schedule = { id: uid(), name, items, createdAt: new Date().toISOString() };
+  const n: Schedule = { id: uid(), name, date: date || null, items, createdAt: new Date().toISOString() };
   all.push(n); save("t_schedules", all); return n;
 }
 export function updateSchedule(id: string, name: string, items: ScheduleBlock[]) {
@@ -525,7 +533,6 @@ export function updateSchedule(id: string, name: string, items: ScheduleBlock[])
 export function deleteSchedule(id: string) {
   save("t_schedules", load<Schedule>("t_schedules").filter(s => s.id !== id));
 }
-// Apply a schedule template to a date as plan items
 export function applySchedule(scheduleId: string, date: string) {
   const s = getSchedules().find(x => x.id === scheduleId);
   if (!s) return;
