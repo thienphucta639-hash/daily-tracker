@@ -71,6 +71,7 @@ export default function App() {
   const timerDone = useRef(false);
 
   const isToday = date === formatDate(new Date());
+  const isPastDay = date < formatDate(new Date());
   const tog = (k: string) => setCol(p => ({ ...p, [k]: !p[k] }));
 
   const reload = useCallback(() => {
@@ -217,6 +218,7 @@ export default function App() {
   };
 
   const del = (t: string, id: string) => {
+    if (isPastDay) return;
     if (!confirm("Xóa?")) return;
     if (t === "m") {
       // Find matching auto-created expense and delete it too
@@ -493,14 +495,14 @@ export default function App() {
             {isToday && <button onClick={() => setModal("addHabit")} className="text-[10px] text-mute bg-card border border-dashed border-line rounded-lg py-1.5 w-full hover:border-ink hover:text-ink transition-colors font-medium">{habits.length === 0 ? "+ Thêm thói quen" : "+ Thêm"}</button>}
 
             {/* ACTIVITIES */}
-            <Sec title="Hoạt động" icon={P.clip} count={acts.length} c={!!col.a} onT={() => tog("a")} onA={() => setModal("act")}>
+            <Sec title="Hoạt động" icon={P.clip} count={acts.length} c={!!col.a} onT={() => tog("a")} onA={() => { if (!isPastDay) setModal("act"); }}>
               {acts.length === 0 ? <Em /> : acts.map(a => (
                 <div key={a.id} className="flex items-center gap-2 py-1 group">
                   <span className="text-xs w-5 text-center shrink-0"><CI cat={a.category} /></span>
                   <span className="text-[12px] font-medium flex-1 truncate">{a.title}</span>
                   {a.startTime && <span className="text-[10px] text-mute tnum shrink-0">{a.startTime}{a.endTime ? `–${a.endTime}` : ""}</span>}
                   {a.durationMinutes != null && a.durationMinutes > 0 && <span className="text-[10px] bg-blue2 text-blue px-1 py-0.5 rounded font-semibold tnum border border-blue/20 shrink-0">{fmtDur(a.durationMinutes)}</span>}
-                  <button onClick={() => del("a", a.id)} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
+                  {!isPastDay && <button onClick={() => del("a", a.id)} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>}
                 </div>
               ))}
             </Sec>
@@ -568,7 +570,7 @@ export default function App() {
             )}
 
             {/* Meals with price */}
-            <Sec title="Bữa ăn" icon={P.fork} count={meals.length} c={!!col.me} onT={() => tog("me")} onA={() => setModal("meal")}>
+            <Sec title="Bữa ăn" icon={P.fork} count={meals.length} c={!!col.me} onT={() => tog("me")} onA={() => { if (!isPastDay) setModal("meal"); }}>
               {meals.length === 0 ? <Em /> : (
                 <div className="space-y-2">
                   {Object.entries(mp).sort((a, b) => a[0].localeCompare(b[0])).map(([k, ms]) => {
@@ -584,7 +586,7 @@ export default function App() {
                        {m.fat != null && m.fat > 0 && <span className="text-[10px] bg-card text-mute px-1 py-0.5 rounded font-semibold tnum shrink-0">F{m.fat}g</span>}
                        {m.carbs != null && m.carbs > 0 && <span className="text-[10px] bg-card text-mute px-1 py-0.5 rounded font-semibold tnum shrink-0">C{m.carbs}g</span>}
                        {m.price != null && m.price > 0 && <span className="text-[10px] bg-red2 text-red px-1 py-0.5 rounded font-semibold tnum shrink-0">{fmtCurrency(m.price)}</span>}
-                        <button onClick={() => del("m", m.id)} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
+                        {!isPastDay && <button onClick={() => del("m", m.id)} className="text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>}
                       </div>); })}
                     </div>);
                   })}
@@ -594,7 +596,7 @@ export default function App() {
             </Sec>
 
             {/* Expenses */}
-            <Sec title="Chi tiêu" icon={P.wallet} count={exps.length} c={!!col.e} onT={() => tog("e")} onA={() => setModal("exp")}
+            <Sec title="Chi tiêu" icon={P.wallet} count={exps.length} c={!!col.e} onT={() => tog("e")} onA={() => { if (!isPastDay) setModal("exp"); }}
               extra={totExp > 0 ? <span className="font-bold text-[11px] text-red tnum">{fmtCurrency(totExp)}</span> : undefined}>
               {exps.length === 0 ? <Em /> : (
                 <div className="space-y-0.5">
@@ -603,7 +605,7 @@ export default function App() {
                     : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0"><CI cat={e.category} /></span>}
                     <div className="flex-1 min-w-0"><div className="text-[12px] font-medium truncate">{e.description}</div><div className="text-[10px] text-mute">{fmtTimeVN(e.createdAt)} · {ge(e.category)?.label}</div></div>
                     <span className="font-bold text-[11px] text-red tnum shrink-0">−{fmtCurrency(e.amount)}</span>
-                    <button onClick={() => del("e", e.id)} className="mt-1 text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>
+                    {!isPastDay && <button onClick={() => del("e", e.id)} className="mt-1 text-mute2 hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0"><Ic d={P.x} size={12} /></button>}
                   </div>); })}
                 </div>
               )}
@@ -1920,11 +1922,47 @@ function PetAssistant() {
   const todayCal = todayMeals.reduce((s, m) => s + (m.calories || 0), 0);
   const todaySpent = todayExps.reduce((s, e) => s + e.amount, 0);
   const streak = S.getStreakV2();
+  const todayPlans = S.getPlans(today);
+  const [urgentAlert, setUrgentAlert] = useState<S.PlanItem | null>(null);
+  const [dismissedPlans, setDismissedPlans] = useState<Set<string>>(new Set());
+
+  // Check for upcoming plans every 30s
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      for (const p of todayPlans) {
+        if (p.done || !p.time || dismissedPlans.has(p.id)) continue;
+        // Calculate minutes until plan
+        const [ph, pm] = p.time.split(":").map(Number);
+        const planMin = ph * 60 + pm;
+        const nowMin = now.getHours() * 60 + now.getMinutes();
+        const diff = planMin - nowMin;
+        // 30 min before → pet reminds
+        if (diff > 0 && diff <= 30 && !bubble) {
+          setBubble(`⏰ "${p.title}" bắt đầu lúc ${p.time} — còn ${diff} phút!`);
+          setTimeout(() => setBubble(null), 8000);
+        }
+        // 5 min before or past → URGENT fullscreen
+        if (diff <= 5 && diff >= -10) {
+          setUrgentAlert(p);
+        }
+      }
+    };
+    check();
+    const interval = setInterval(check, 30000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayPlans.length, dismissedPlans.size]);
 
   useEffect(() => {
     const t = setTimeout(() => {
       setShow(true);
-      if (todayRem.length >= 3) {
+      // Priority: plans > reminders > greeting
+      const undonePlans = todayPlans.filter(p => !p.done);
+      if (undonePlans.length > 0) {
+        setBubble(`Hôm nay có ${undonePlans.length} kế hoạch! ${undonePlans.slice(0, 2).map(p => p.title).join(", ")}${undonePlans.length > 2 ? "..." : ""}`);
+      } else if (todayRem.length >= 3) {
         setBubble(PET_REMIND_INTROS[Math.floor(Math.random() * PET_REMIND_INTROS.length)] + ` (${todayRem.length} việc)`);
       } else if (todayRem.length > 0) {
         setBubble(`Ê! Có ${todayRem.length} nhắc nhở nè. Giữ mình để xem chi tiết!`);
@@ -1978,6 +2016,21 @@ function PetAssistant() {
 
   return (
     <div className="fixed bottom-20 right-2 z-40 flex flex-col items-end gap-1.5 sm:bottom-8 select-none" style={{ maxWidth: "260px", WebkitUserSelect: "none", touchAction: "none" }}>
+      {/* URGENT FULLSCREEN ALERT */}
+      {urgentAlert && (
+        <div className="fixed inset-0 bg-red/95 z-50 flex flex-col items-center justify-center p-6 a-pop" onClick={() => { setDismissedPlans(p => new Set(p).add(urgentAlert.id)); setUrgentAlert(null); }}>
+          <div className="text-6xl mb-4">⏰</div>
+          <div className="text-white text-2xl font-bold text-center uppercase tracking-wider mb-2">SẮP TỚI GIỜ!</div>
+          <div className="text-white/90 text-lg font-bold text-center mb-1">{urgentAlert.title}</div>
+          <div className="text-white/70 text-base tnum mb-1">{urgentAlert.time}</div>
+          {urgentAlert.detail && <div className="text-white/60 text-sm text-center mb-4">{urgentAlert.detail}</div>}
+          <button onClick={() => { setDismissedPlans(p => new Set(p).add(urgentAlert.id)); setUrgentAlert(null); }}
+            className="px-8 py-3 bg-white text-red rounded-xl font-bold text-base active:scale-95 min-h-[52px]">
+            Đã biết ✓
+          </button>
+        </div>
+      )}
+
       {/* Board — long press — multi-tab */}
       {board && (
         <div className="bg-card border border-line rounded-xl shadow-2xl a-pop w-[270px] max-h-[55vh] overflow-hidden flex flex-col">
