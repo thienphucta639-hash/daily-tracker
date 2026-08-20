@@ -628,6 +628,9 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* DEBT TRACKING */}
+            <DebtSection onChanged={reload} />
           </>
         ) : tab === "plan" ? (
           <>
@@ -1150,7 +1153,7 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
               if (r.pro) setPro(String(r.pro));
               if (r.fat) setFat(String(r.fat));
               if (r.carbs) setCarb(String(r.carbs));
-              if (r.price) setPrice(String(r.price / 1000) + "k");
+
             }
           }}
         />
@@ -1197,23 +1200,137 @@ function ActModal({ date, onDone, onClose }: { date: string; onDone: () => void;
 function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
   const [cat, setCat] = useState("food"); const [ds, setDs] = useState(""); const [am, setAm] = useState(""); const [im, setIm] = useState<string | null>(null);
   const p = parseMoney(am);
+  const expPresets = S.getExpensePresets();
   return (<Wrap title="Thêm chi tiêu" onClose={onClose}>
+    {expPresets.length > 0 && (
+      <div className="mb-2">
+        <div className="text-[9px] text-mute font-bold mb-1">Mẫu nhanh:</div>
+        <div className="flex gap-1 overflow-x-auto pb-0.5">
+          {expPresets.map(p => (
+            <button key={p.id} type="button" onClick={() => { setDs(p.description); setAm(String(p.amount)); setCat(p.category); }}
+              className="shrink-0 flex flex-col items-start px-2 py-1.5 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[36px] active:scale-95 text-left">
+              <span>{EXPS.find(x => x.value === p.category)?.emoji} {p.description}</span>
+              <span className="text-mute font-normal tnum">{fmtCurrency(p.amount)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
     <div className="flex flex-wrap gap-1 mb-2.5">{EXPS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{c.emoji} {c.label}</button>))}</div>
     <ImgP value={im} onChange={setIm} />
     <input type="text" value={ds} onChange={e => setDs(e.target.value)} placeholder="Mô tả" autoFocus className={`${ic} mb-2`} />
-    <div className="mb-2.5"><MoneyIn value={am} onChange={setAm} placeholder="Số tiền" /></div>
+    <div className="mb-2"><MoneyIn value={am} onChange={setAm} placeholder="Số tiền" /></div>
+    {/* Save as preset */}
+    {ds.trim() && p != null && p > 0 && (
+      <button type="button" onClick={() => { S.addExpensePreset({ description: ds.trim(), amount: p, category: cat }); alert("Đã lưu mẫu!"); }}
+        className="w-full py-1.5 mb-2 bg-green2 border border-green/20 text-green rounded-md text-[9px] font-bold min-h-[36px] active:scale-95">
+        + Lưu thành mẫu (dùng lại)
+      </button>
+    )}
     <button onClick={async () => {
       if (!ds.trim() || p == null || p <= 0) return;
       try {
         const exp = S.addExpense({ date, category: cat, description: ds.trim(), amount: p, image: im });
         if (im) await saveImage(`img_${exp.id}`, im);
         onDone();
-      } catch (err) {
-        console.error(err);
-        alert("Lỗi lưu. Thử lại.");
-      }
-    }} disabled={!ds.trim() || p == null || p <= 0} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">{p != null && p > 0 ? `Thêm · ${fmtCurrency(p)}` : "Thêm"}</button>
+      } catch { alert("Lỗi lưu."); }
+    }} disabled={!ds.trim() || p == null || p <= 0} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">{p != null && p > 0 ? `Thêm · ${fmtCurrency(p)}` : "Thêm"}</button>
   </Wrap>);
+}
+
+/* ═══ DEBT SECTION ═══ */
+function DebtSection({ onChanged }: { onChanged: () => void }) {
+  const [modal, setModal] = useState<string | null>(null);
+  const debts = S.getDebts();
+  const total = debts.reduce((s, d) => s + Math.max(0, d.totalAmount - d.paidAmount), 0);
+
+  const prInfo = [
+    { v: 0, l: "Thấp", c: "border-line text-mute" },
+    { v: 1, l: "Trung bình", c: "border-blue/40 text-blue" },
+    { v: 2, l: "Cao", c: "border-gold/40 text-gold" },
+    { v: 3, l: "🔴 Khẩn", c: "border-red/40 text-red" },
+  ];
+
+  return (
+    <div className="bg-card rounded-lg border border-line overflow-hidden">
+      <div className="flex items-center px-2.5 py-2 gap-2 border-b border-line">
+        <span className="w-6 h-6 rounded-md bg-red2 border border-red/20 flex items-center justify-center text-red shrink-0"><Ic d={P.wallet} size={12} /></span>
+        <span className="font-bold text-xs flex-1">Quản lý nợ</span>
+        <button onClick={() => setModal("add")} className="w-7 h-7 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90 shrink-0"><Ic d={P.plus} size={13} sw={2.5} /></button>
+      </div>
+
+      {debts.length > 0 && (
+        <div className="px-2.5 py-2 bg-red/5 border-b border-line flex items-center justify-between">
+          <span className="text-[10px] text-mute font-bold">TỔNG CÒN NỢ</span>
+          <span className="font-bold text-base text-red tnum">{fmtCurrency(total)}</span>
+        </div>
+      )}
+
+      {debts.length === 0 ? (
+        <div className="px-3 py-3 text-center text-mute text-[10px]">Chưa có khoản nợ. Thêm để theo dõi.</div>
+      ) : debts.map(d => {
+        const remaining = Math.max(0, d.totalAmount - d.paidAmount);
+        const pct = d.totalAmount > 0 ? Math.round((d.paidAmount / d.totalAmount) * 100) : 0;
+        const isOverdue = d.dueDate && d.dueDate < formatDate(new Date()) && remaining > 0;
+        const pr = prInfo[d.priority || 0];
+        return (
+          <div key={d.id} className={`px-2.5 py-2 border-b border-line/30 last:border-0 ${isOverdue ? "bg-red/5" : ""}`}>
+            <div className="flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-bold">{d.creditor}</span>
+                  <span className={`text-[8px] px-1 py-0.5 rounded font-bold border ${pr.c}`}>{pr.l}</span>
+                  {isOverdue && <span className="text-[8px] text-red font-bold a-blink">QUÁ HẠN</span>}
+                </div>
+                <div className="text-[9px] text-mute">{d.description}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] font-bold text-red tnum">{fmtCurrency(remaining)}</span>
+                  <span className="text-[8px] text-mute tnum">/ {fmtCurrency(d.totalAmount)}</span>
+                  {d.dueDate && <span className={`text-[8px] tnum ${isOverdue ? "text-red font-bold" : "text-mute"}`}>Hạn: {fmtDateDisp(d.dueDate)}</span>}
+                </div>
+                <div className="h-1 bg-bg2 rounded-full mt-1 overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-green" : "bg-gold"}`} style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 shrink-0">
+                {remaining > 0 && <button onClick={() => { const v = prompt(`Trả khoản nợ "${d.creditor}" (còn ${fmtCurrency(remaining)}):`, ""); const n = v ? parseMoney(v) : null; if (n != null && n > 0) { S.payDebt(d.id, n); onChanged(); } }} className="px-2 py-1.5 bg-green2 border border-green/20 text-green rounded-md text-[9px] font-bold min-h-[32px] active:scale-95">Trả</button>}
+                <button onClick={() => { if (confirm("Xóa khoản nợ?")) { S.deleteDebt(d.id); onChanged(); } }} className="text-mute2 hover:text-red min-w-[32px] min-h-[24px] flex items-center justify-center"><Ic d={P.x} size={10} /></button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {modal === "add" && <AddDebtModal onDone={() => { onChanged(); setModal(null); }} onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
+function AddDebtModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
+  const [creditor, setCreditor] = useState("");
+  const [desc, setDesc] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState(1);
+  const [rate, setRate] = useState("");
+  const p = parseMoney(amount);
+  return (
+    <Wrap title="Thêm khoản nợ" onClose={onClose}>
+      <input type="text" value={creditor} onChange={e => setCreditor(e.target.value)} placeholder="Ngân hàng / tên người" autoFocus className={`${ic} mb-2`} />
+      <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Khoản nợ gì (thẻ tín dụng, vay...)" className={`${ic} mb-2`} />
+      <div className="mb-2"><MoneyIn value={amount} onChange={setAmount} placeholder="Tổng số nợ" /></div>
+      <div className="flex gap-2 mb-2">
+        <input type="date" value={dueDate} min={S.getAllDataDates()[0] || formatDate(new Date())} onChange={e => setDueDate(e.target.value)} className={`${ic} flex-1`} />
+        <input type="number" value={rate} onChange={e => setRate(e.target.value)} placeholder="Lãi %/năm" className={`${ic} w-24`} />
+      </div>
+      <div className="grid grid-cols-4 gap-1 mb-2.5">
+        {[{ v: 0, l: "Thấp" }, { v: 1, l: "TB" }, { v: 2, l: "Cao" }, { v: 3, l: "🔴 Khẩn" }].map(p => (
+          <button key={p.v} type="button" onClick={() => setPriority(p.v)} className={`py-2 rounded-md text-[10px] font-bold min-h-[40px] border ${priority === p.v ? "bg-ink text-bg border-ink" : "bg-bg2 border-line text-mute"}`}>{p.l}</button>
+        ))}
+      </div>
+      <button type="button" onClick={() => { if (!creditor.trim() || p == null) return; S.addDebt({ creditor: creditor.trim(), description: desc.trim() || "Nợ", totalAmount: p, dueDate: dueDate || null, priority, interestRate: rate ? parseFloat(rate) : null }); onDone(); }} disabled={!creditor.trim() || p == null} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">Thêm khoản nợ</button>
+    </Wrap>
+  );
 }
 
 function AddHabitModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
@@ -1826,19 +1943,26 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
 }
 
 /* ═══ GEMINI PASTE — parse nutrition from text ═══ */
-function parseGeminiText(text: string): { cal: number; pro: number; fat: number; carbs: number; price: number } | null {
-  const t = text.toLowerCase().replace(/,/g, ".").replace(/\s+/g, " ");
-  const findNum = (patterns: RegExp[]): number => {
-    for (const p of patterns) { const m = t.match(p); if (m) return Math.round(parseFloat(m[1])); }
-    return 0;
-  };
-  const cal = findNum([/(\d+\.?\d*)\s*(?:cal|kcal|calo)/i, /calories?\s*[:\-]?\s*(\d+)/i]);
-  const pro = findNum([/protein\s*[:\-]?\s*(\d+\.?\d*)/i, /đạm\s*[:\-]?\s*(\d+\.?\d*)/i, /(\d+\.?\d*)\s*g?\s*protein/i]);
-  const fat = findNum([/fat\s*[:\-]?\s*(\d+\.?\d*)/i, /chất béo\s*[:\-]?\s*(\d+\.?\d*)/i, /(\d+\.?\d*)\s*g?\s*fat/i]);
-  const carbs = findNum([/carb(?:s|ohydrate)?\s*[:\-]?\s*(\d+\.?\d*)/i, /tinh bột\s*[:\-]?\s*(\d+\.?\d*)/i, /(\d+\.?\d*)\s*g?\s*carb/i]);
+function parseGeminiText(raw: string): { cal: number; pro: number; fat: number; carbs: number } | null {
+  if (!raw || raw.trim().length < 5) return null;
+  // Split into lines, only process lines containing keywords
+  const lines = raw.split(/[\n\r]+|•|·|;|(?<=[.!?])\s/);
+  let cal = 0, pro = 0, fat = 0, carbs = 0;
+  for (const line of lines) {
+    const l = line.toLowerCase().trim();
+    if (!l || l.length > 120) continue;
+    // Extract numbers from line
+    const nums = l.match(/(\d+\.?\d*)/g);
+    if (!nums) continue;
+    const firstNum = Math.round(parseFloat(nums[0]));
+    // Match specific keywords on this line only
+    if (/cal|calo|kcal|năng lượng/.test(l) && !cal) cal = firstNum;
+    else if (/protein|đạm|chất đạm/.test(l) && !pro) pro = firstNum;
+    else if (/fat|chất béo|béo/.test(l) && !fat) fat = firstNum;
+    else if (/carb|carbohydrate|tinh bột|đường/.test(l) && !carbs) carbs = firstNum;
+  }
   if (cal === 0 && pro === 0 && fat === 0 && carbs === 0) return null;
-  const price = findNum([/(\d+)\s*(?:k|nghìn|ngàn|000đ)/i]);
-  return { cal, pro, fat, carbs, price: price > 0 ? price * 1000 : 0 };
+  return { cal, pro, fat, carbs };
 }
 
 function GeminiPasteTab({ onDone }: { onDone: () => void }) {

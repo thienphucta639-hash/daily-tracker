@@ -411,6 +411,8 @@ export function exportAll(): string {
     habitChecks: load<HabitCheck>("t_habit_checks"), qnotes: load<QuickNote>("t_qnotes"),
     pomo: load<PomodoroSession>("t_pomo"),
     plans: load<PlanItem>("t_plans"), schedules: load<Schedule>("t_schedules"),
+    mealPresets: load<MealPreset>("t_meal_presets"), expPresets: load<ExpensePreset>("t_exp_presets"),
+    debts: load<Debt>("t_debts"), streak: localStorage.getItem("t_streak_v3"),
   }, null, 2);
 }
 
@@ -429,6 +431,10 @@ export function importAll(json: string): boolean {
     if (d.pomo) save("t_pomo", d.pomo);
     if (d.plans) save("t_plans", d.plans);
     if (d.schedules) save("t_schedules", d.schedules);
+    if (d.mealPresets) save("t_meal_presets", d.mealPresets);
+    if (d.expPresets) save("t_exp_presets", d.expPresets);
+    if (d.debts) save("t_debts", d.debts);
+    if (d.streak) localStorage.setItem("t_streak_v3", d.streak);
     return true;
   } catch { return false; }
 }
@@ -680,4 +686,69 @@ export function addMealPreset(p: Omit<MealPreset, "id">): MealPreset {
 }
 export function deleteMealPreset(id: string) {
   save("t_meal_presets", load<MealPreset>("t_meal_presets").filter(p => p.id !== id));
+}
+
+// ═══ EXPENSE PRESETS — recurring cost templates (key: t_exp_presets) ═══
+export interface ExpensePreset {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+}
+
+export function getExpensePresets(): ExpensePreset[] { return load<ExpensePreset>("t_exp_presets"); }
+export function addExpensePreset(p: Omit<ExpensePreset, "id">): ExpensePreset {
+  const all = load<ExpensePreset>("t_exp_presets");
+  const n: ExpensePreset = { ...p, id: uid() };
+  all.push(n); save("t_exp_presets", all); return n;
+}
+export function deleteExpensePreset(id: string) {
+  save("t_exp_presets", load<ExpensePreset>("t_exp_presets").filter(p => p.id !== id));
+}
+
+// ═══ DEBT TRACKING — loans, credit cards, personal debts (key: t_debts) ═══
+export interface Debt {
+  id: string;
+  creditor: string;      // ngân hàng / tên người
+  description: string;    // khoản nợ gì
+  totalAmount: number;    // tổng nợ ban đầu
+  paidAmount: number;     // đã trả
+  dueDate: string | null; // hạn cuối YYYY-MM-DD
+  priority: number;       // 0=thấp, 1=tb, 2=cao, 3=khẩn cấp
+  interestRate: number | null; // lãi suất %/năm
+  createdAt: string;
+  paidHistory: { amount: number; date: string }[];
+}
+
+export function getDebts(): Debt[] {
+  return load<Debt>("t_debts").sort((a, b) => {
+    // Sort by priority desc, then by due date asc
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    return (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+  });
+}
+export function addDebt(d: Omit<Debt, "id" | "paidAmount" | "createdAt" | "paidHistory">): Debt {
+  const all = load<Debt>("t_debts");
+  const n: Debt = { ...d, id: uid(), paidAmount: 0, createdAt: new Date().toISOString(), paidHistory: [] };
+  all.push(n); save("t_debts", all); return n;
+}
+export function payDebt(id: string, amount: number): void {
+  const all = load<Debt>("t_debts");
+  const d = all.find(x => x.id === id);
+  if (!d) return;
+  d.paidAmount += amount;
+  d.paidHistory.push({ amount, date: new Date().toISOString() });
+  if (d.paidAmount >= d.totalAmount) d.paidAmount = d.totalAmount;
+  save("t_debts", all);
+}
+export function updateDebt(id: string, updates: Partial<Debt>): void {
+  const all = load<Debt>("t_debts");
+  const d = all.find(x => x.id === id);
+  if (d) { Object.assign(d, updates); save("t_debts", all); }
+}
+export function deleteDebt(id: string): void {
+  save("t_debts", load<Debt>("t_debts").filter(d => d.id !== id));
+}
+export function getTotalDebt(): number {
+  return load<Debt>("t_debts").reduce((s, d) => s + Math.max(0, d.totalAmount - d.paidAmount), 0);
 }
