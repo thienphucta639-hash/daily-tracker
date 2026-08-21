@@ -413,6 +413,8 @@ export function exportAll(): string {
     plans: load<PlanItem>("t_plans"), schedules: load<Schedule>("t_schedules"),
     mealPresets: load<MealPreset>("t_meal_presets"), expPresets: load<ExpensePreset>("t_exp_presets"),
     debts: load<Debt>("t_debts"), streak: localStorage.getItem("t_streak_v3"),
+    accounts: load<MoneyAccount>("t_accounts"), dreams: load<DreamItem>("t_dreams"),
+    buyDecisions: load<BuyDecision>("t_buy_decisions"),
   }, null, 2);
 }
 
@@ -435,6 +437,9 @@ export function importAll(json: string): boolean {
     if (d.expPresets) save("t_exp_presets", d.expPresets);
     if (d.debts) save("t_debts", d.debts);
     if (d.streak) localStorage.setItem("t_streak_v3", d.streak);
+    if (d.accounts) save("t_accounts", d.accounts);
+    if (d.dreams) save("t_dreams", d.dreams);
+    if (d.buyDecisions) save("t_buy_decisions", d.buyDecisions);
     return true;
   } catch { return false; }
 }
@@ -673,6 +678,8 @@ export interface MealPreset {
   protein: number;
   fat: number;
   carbs: number;
+  mealType?: string | null;
+  price?: number | null;
 }
 
 export function getMealPresets(): MealPreset[] { return load<MealPreset>("t_meal_presets"); }
@@ -687,6 +694,97 @@ export function addMealPreset(p: Omit<MealPreset, "id">): MealPreset {
 export function deleteMealPreset(id: string) {
   save("t_meal_presets", load<MealPreset>("t_meal_presets").filter(p => p.id !== id));
 }
+
+// ═══ MONEY ACCOUNTS — cash and bank balances (key: t_accounts) ═══
+export interface MoneyAccount {
+  id: string;
+  name: string;
+  type: "cash" | "bank" | "ewallet" | "other";
+  balance: number;
+  color: string;
+  updatedAt: string;
+}
+export function getMoneyAccounts(): MoneyAccount[] { return load<MoneyAccount>("t_accounts"); }
+export function addMoneyAccount(a: Omit<MoneyAccount, "id" | "updatedAt">): MoneyAccount {
+  const all = load<MoneyAccount>("t_accounts");
+  const n: MoneyAccount = { ...a, id: uid(), updatedAt: new Date().toISOString() };
+  all.push(n); save("t_accounts", all); return n;
+}
+export function adjustMoneyAccount(id: string, delta: number): void {
+  const all = load<MoneyAccount>("t_accounts");
+  const a = all.find(x => x.id === id);
+  if (a) { a.balance += delta; a.updatedAt = new Date().toISOString(); save("t_accounts", all); }
+}
+export function updateMoneyAccount(id: string, updates: Partial<MoneyAccount>): void {
+  const all = load<MoneyAccount>("t_accounts");
+  const a = all.find(x => x.id === id);
+  if (a) { Object.assign(a, updates, { updatedAt: new Date().toISOString() }); save("t_accounts", all); }
+}
+export function deleteMoneyAccount(id: string): void { save("t_accounts", load<MoneyAccount>("t_accounts").filter(a => a.id !== id)); }
+export function getTotalMoney(): number { return getMoneyAccounts().reduce((s, a) => s + a.balance, 0); }
+
+// ═══ DREAM ITEMS — wishlist and saving goals (key: t_dreams) ═══
+export interface DreamItem {
+  id: string;
+  name: string;
+  category: "need" | "want" | "subscription" | "experience" | "other";
+  price: number;
+  savedAmount: number;
+  monthlySaving: number;
+  reserveAmount: number;
+  priority: number;
+  targetDate: string | null;
+  reason: string | null;
+  status: "saving" | "ready" | "bought" | "paused";
+  createdAt: string;
+  contributions: { amount: number; date: string }[];
+}
+export function getDreamItems(): DreamItem[] { return load<DreamItem>("t_dreams").sort((a, b) => b.priority - a.priority); }
+export function addDreamItem(d: Omit<DreamItem, "id" | "createdAt" | "contributions">): DreamItem {
+  const all = load<DreamItem>("t_dreams");
+  const n: DreamItem = { ...d, id: uid(), createdAt: new Date().toISOString(), contributions: [] };
+  all.push(n); save("t_dreams", all); return n;
+}
+export function contributeDream(id: string, amount: number): void {
+  const all = load<DreamItem>("t_dreams");
+  const d = all.find(x => x.id === id);
+  if (d) {
+    d.savedAmount = Math.min(d.price, d.savedAmount + amount);
+    d.contributions.push({ amount, date: new Date().toISOString() });
+    if (d.savedAmount >= d.price) d.status = "ready";
+    save("t_dreams", all);
+  }
+}
+export function updateDreamItem(id: string, updates: Partial<DreamItem>): void {
+  const all = load<DreamItem>("t_dreams");
+  const d = all.find(x => x.id === id);
+  if (d) { Object.assign(d, updates); save("t_dreams", all); }
+}
+export function deleteDreamItem(id: string): void { save("t_dreams", load<DreamItem>("t_dreams").filter(d => d.id !== id)); }
+
+// ═══ PURCHASE DECISIONS — saved buy/wait analyses (key: t_buy_decisions) ═══
+export interface BuyDecision {
+  id: string;
+  name: string;
+  type: "item" | "subscription" | "course" | "service" | "other";
+  price: number;
+  monthlyPrice: number;
+  expectedUses: number;
+  importance: number;
+  urgency: number;
+  hasAlternative: boolean;
+  notes: string | null;
+  result: string;
+  score: number;
+  createdAt: string;
+}
+export function getBuyDecisions(): BuyDecision[] { return load<BuyDecision>("t_buy_decisions").sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
+export function addBuyDecision(d: Omit<BuyDecision, "id" | "createdAt">): BuyDecision {
+  const all = load<BuyDecision>("t_buy_decisions");
+  const n: BuyDecision = { ...d, id: uid(), createdAt: new Date().toISOString() };
+  all.push(n); save("t_buy_decisions", all); return n;
+}
+export function deleteBuyDecision(id: string): void { save("t_buy_decisions", load<BuyDecision>("t_buy_decisions").filter(d => d.id !== id)); }
 
 // ═══ EXPENSE PRESETS — recurring cost templates (key: t_exp_presets) ═══
 export interface ExpensePreset {

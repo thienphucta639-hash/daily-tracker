@@ -9,6 +9,7 @@ import {
 import * as S from "@/lib/storage";
 import { migrateTimezone } from "@/lib/migrate";
 import { migrateImages, resolveImage, saveImage } from "@/lib/imgdb";
+import FinanceTools from "./finance-tools";
 
 /* ═══ ICONS ═══ */
 function Ic({ d, size = 18, sw = 1.8, cls }: { d: string; size?: number; sw?: number; cls?: string }) {
@@ -554,6 +555,7 @@ export default function App() {
         ) : tab === "exp" ? (
           <>
             {/* ═══ CHI TIÊU TAB ═══ */}
+            <FinanceTools />
             {/* Summary card */}
             {totExp > 0 && (
               <div className="bg-card rounded-xl border border-red/20 p-3">
@@ -1097,6 +1099,28 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
 
   return (<Wrap title={step === 1 ? "Thêm bữa ăn" : "Dinh dưỡng & giá"} onClose={onClose}>
     {step === 1 ? (<>
+      {/* Saved meals — one tap creates a separate meal */}
+      {S.getMealPresets().length > 0 && (
+        <div className="mb-2">
+          <div className="text-[9px] text-mute font-bold mb-1">Món đã lưu — bấm để thêm ngay:</div>
+          <div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">
+            {S.getMealPresets().map(p => (
+              <div key={p.id} className="relative">
+                <button type="button" onClick={() => {
+                  const mealType = p.mealType || autoMealType();
+                  S.addMeal({ date, mealType, foodName: p.name, calories: p.calories || null, protein: p.protein || null, fat: p.fat || null, carbs: p.carbs || null, notes: null, time: nowHHMM(), image: null, price: p.price || null });
+                  if (p.price && p.price > 0) S.addExpense({ date, category: "food", description: p.name, amount: p.price, image: null });
+                  onDone();
+                }} className="w-full text-left px-2 py-2 bg-bg2 border border-line rounded-lg min-h-[48px] active:scale-95 hover:border-ink">
+                  <div className="text-[10px] font-bold pr-4 truncate">{p.name}</div>
+                  <div className="text-[8px] text-mute tnum">{p.calories}cal · P{p.protein} · F{p.fat} · C{p.carbs}</div>
+                </button>
+                <button type="button" onClick={() => { if (confirm("Xóa mẫu món này?")) S.deleteMealPreset(p.id); }} className="absolute top-1 right-1 w-6 h-6 flex items-center justify-center text-mute hover:text-red"><Ic d={P.x} size={9} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Step 1: Meal type + name + photo + time */}
       <div className="flex gap-1 mb-2">{MEALS.map(m => (<button key={m.value} onClick={() => setMt(m.value)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all min-h-[40px] ${mt === m.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><div className="text-sm">{m.emoji}</div>{m.label}</button>))}</div>
       <ImgP value={im} onChange={setIm} />
@@ -1134,7 +1158,7 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
 
       {/* Gemini — copy prompt + open app */}
       <button type="button" onClick={() => {
-        const prompt = `Tính dinh dưỡng món "${fn}": bao nhiêu calories, protein (g), fat (g), carbs (g)? Trả lời ngắn gọn chỉ số.`;
+        const prompt = `Phân tích ảnh món "${fn}" và ước tính dinh dưỡng cho toàn bộ khẩu phần trong ảnh. CHỈ TRẢ LỜI ĐÚNG MỘT DÒNG, KHÔNG GIẢI THÍCH, KHÔNG THÊM CHỮ KHÁC, theo chính xác format: JAYTRACKER|CAL=0|PRO=0|FAT=0|CARB=0. Thay số 0 bằng số nguyên ước tính: CAL là kcal, PRO/FAT/CARB là gram.`;
         navigator.clipboard?.writeText(prompt).catch(() => {});
         window.open("https://gemini.google.com/app", "_blank");
       }} className="flex items-center justify-center gap-2 w-full py-2.5 mb-1 bg-blue2 border border-blue/20 text-blue rounded-lg text-[11px] font-bold min-h-[44px] active:scale-95">
@@ -1171,7 +1195,7 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
         <button type="button" onClick={() => {
           const name = prompt("Tên preset (VD: 2 trứng 1 chuối):", fn);
           if (name?.trim()) {
-            S.addMealPreset({ name: name.trim(), calories: parseInt(cal) || 0, protein: parseInt(pro) || 0, fat: parseInt(fat) || 0, carbs: parseInt(carb) || 0 });
+            S.addMealPreset({ name: name.trim(), calories: parseInt(cal) || 0, protein: parseInt(pro) || 0, fat: parseInt(fat) || 0, carbs: parseInt(carb) || 0, mealType: mt, price: pp || null });
           }
         }} className="w-full py-1.5 mb-2 bg-green2 border border-green/20 text-green rounded-md text-[9px] font-bold min-h-[36px] active:scale-95">
           Lưu chỉ số này để dùng lại
@@ -1319,10 +1343,9 @@ function AddDebtModal({ onDone, onClose }: { onDone: () => void; onClose: () => 
       <input type="text" value={creditor} onChange={e => setCreditor(e.target.value)} placeholder="Ngân hàng / tên người" autoFocus className={`${ic} mb-2`} />
       <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Khoản nợ gì (thẻ tín dụng, vay...)" className={`${ic} mb-2`} />
       <div className="mb-2"><MoneyIn value={amount} onChange={setAmount} placeholder="Tổng số nợ" /></div>
-      <div className="flex gap-2 mb-2">
-        <input type="date" value={dueDate} min={S.getAllDataDates()[0] || formatDate(new Date())} onChange={e => setDueDate(e.target.value)} className={`${ic} flex-1`} />
-        <input type="number" value={rate} onChange={e => setRate(e.target.value)} placeholder="Lãi %/năm" className={`${ic} w-24`} />
-      </div>
+      <label className="block text-[9px] text-mute font-bold mb-1">Hạn cuối thanh toán</label>
+      <input type="date" value={dueDate} min={S.getAllDataDates()[0] || formatDate(new Date())} onChange={e => setDueDate(e.target.value)} className="w-full px-3 py-3 rounded-lg bg-bg2 border border-line text-base outline-none focus:border-ink min-h-[52px] mb-2" />
+      <input type="number" value={rate} onChange={e => setRate(e.target.value)} placeholder="Lãi suất %/năm (tùy chọn)" className={`${ic} mb-2`} />
       <div className="grid grid-cols-4 gap-1 mb-2.5">
         {[{ v: 0, l: "Thấp" }, { v: 1, l: "TB" }, { v: 2, l: "Cao" }, { v: 3, l: "🔴 Khẩn" }].map(p => (
           <button key={p.v} type="button" onClick={() => setPriority(p.v)} className={`py-2 rounded-md text-[10px] font-bold min-h-[40px] border ${priority === p.v ? "bg-ink text-bg border-ink" : "bg-bg2 border-line text-mute"}`}>{p.l}</button>
@@ -1945,7 +1968,13 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
 /* ═══ GEMINI PASTE — parse nutrition from text ═══ */
 function parseGeminiText(raw: string): { cal: number; pro: number; fat: number; carbs: number } | null {
   if (!raw || raw.trim().length < 5) return null;
-  // Split into lines, only process lines containing keywords
+  // Exact Jay Tracker format — highest priority, zero ambiguity
+  const exact = raw.replace(/```[a-z]*|```/gi, "").match(/JAYTRACKER\s*\|\s*CAL\s*=\s*(\d+(?:[.,]\d+)?)\s*\|\s*PRO\s*=\s*(\d+(?:[.,]\d+)?)\s*\|\s*FAT\s*=\s*(\d+(?:[.,]\d+)?)\s*\|\s*CARB\s*=\s*(\d+(?:[.,]\d+)?)/i);
+  if (exact) {
+    const n = (v: string) => Math.round(parseFloat(v.replace(",", ".")));
+    return { cal: n(exact[1]), pro: n(exact[2]), fat: n(exact[3]), carbs: n(exact[4]) };
+  }
+  // Fallback for older prose responses: each metric must be on its own keyword line
   const lines = raw.split(/[\n\r]+|•|·|;|(?<=[.!?])\s/);
   let cal = 0, pro = 0, fat = 0, carbs = 0;
   for (const line of lines) {
