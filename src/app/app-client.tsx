@@ -2058,6 +2058,7 @@ const PET_TALKS = [
 
 function PetAssistant() {
   const [bubble, setBubble] = useState<string | null>(null);
+  const [bubbleTab, setBubbleTab] = useState<"remind" | "stats" | "expiry" | "renewal" | "others" | "top3" | "checklist" | "holiday" | null>(null);
   const [board, setBoard] = useState(false);
   const [boardTab, setBoardTab] = useState<"remind" | "stats" | "expiry" | "renewal" | "others" | "top3" | "checklist" | "holiday">("remind");
   const [show, setShow] = useState(false);
@@ -2073,21 +2074,22 @@ function PetAssistant() {
   const nextAlert = useMemo(() => {
     // Alert thật theo dữ liệu thật — một lần/ngày mỗi loại
     const keyBase = formatDate(new Date());
-    const out: { msg: string; sound: boolean }[] = [];
+    type PetTab = "remind" | "stats" | "expiry" | "renewal" | "others" | "top3" | "checklist" | "holiday";
+    const out: { key: string; msg: string; sound: boolean; tab: PetTab }[] = [];
     const ex = S.getExpiringWithin(1);
-    if (ex.length && !S.getSeenKey(`expiry_${keyBase}`)) out.push({ msg: `⚠️ ${ex.length} thứ sắp hết hạn: ${ex.map(x => x.name).join(", ")}`, sound: true });
+    if (ex.length && !S.getSeenKey(`expiry_${keyBase}`)) out.push({ key: `expiry_${keyBase}`, tab: "expiry", msg: `⚠️ ${ex.length} thứ sắp hết hạn: ${ex.map(x => x.name).join(", ")}`, sound: true });
     const du = S.getRecurringDueWithin(2);
-    if (du.length && !S.getSeenKey(`renewal_${keyBase}`)) out.push({ msg: `💳 ${du.length} khoản gia hạn gần hạn: ${du.map(x => x.name).join(", ")}`, sound: true });
+    if (du.length && !S.getSeenKey(`renewal_${keyBase}`)) out.push({ key: `renewal_${keyBase}`, tab: "renewal", msg: `💳 ${du.length} khoản gia hạn gần hạn: ${du.map(x => x.name).join(", ")}`, sound: true });
     const an = S.getSpendAnomaly();
-    if (an && an.ratio >= 3 && !S.getSeenKey(`spend_${keyBase}`)) out.push({ msg: `Chi hôm nay gấp ${an.ratio.toFixed(1)}× 7 ngày qua. OK chứ?`, sound: true });
+    if (an && an.ratio >= 3 && !S.getSeenKey(`spend_${keyBase}`)) out.push({ key: `spend_${keyBase}`, tab: "stats", msg: `Chi hôm nay gấp ${an.ratio.toFixed(1)}× 7 ngày qua. OK chứ?`, sound: true });
     const od = S.getOverdueBorrows(30);
-    if (od.length && !S.getSeenKey(`borrow_${keyBase}`)) out.push({ msg: `${od[0].borrower} mượn ${od[0].item} ${od[0].daysLent} ngày rồi, đòi chưa?`, sound: false });
+    if (od.length && !S.getSeenKey(`borrow_${keyBase}`)) out.push({ key: `borrow_${keyBase}`, tab: "others", msg: `${od[0].borrower} mượn ${od[0].item} ${od[0].daysLent} ngày rồi, đòi chưa?`, sound: false });
     const openCl = S.getChecklists().filter(cl => cl.items.length > 0 && cl.items.some(i => !i.checked));
-    if (openCl.length && !S.getSeenKey(`cl_${keyBase}`)) out.push({ msg: `Checklist ${openCl[0].name} còn ${openCl[0].items.filter(i => !i.checked).length} món chưa đem! Rà lại nút “Đem đâu” trước khi đi nhé.`, sound: true });
+    if (openCl.length && !S.getSeenKey(`cl_${keyBase}`)) out.push({ key: `cl_${keyBase}`, tab: "checklist", msg: `Checklist ${openCl[0].name} còn ${openCl[0].items.filter(i => !i.checked).length} món chưa đem! Rà lại nút “Đem đâu” trước khi đi nhé.`, sound: true });
     const hol = getUpcomingHolidays(1)[0];
-    if (hol && hol.daysLeft <= 7 && !S.getSeenKey(`hol_${hol.date}`)) out.push({ msg: `Lễ ${hol.name} ${hol.daysLeft === 0 ? "HÔM NAY!" : hol.daysLeft === 1 ? "NGÀY MAI" : `còn ${hol.daysLeft} ngày`} ngày ${fmtDateDisp(hol.date)}.`, sound: hol.daysLeft <= 1 });
+    if (hol && hol.daysLeft <= 7 && !S.getSeenKey(`hol_${hol.date}`)) out.push({ key: `hol_${hol.date}`, tab: "holiday", msg: `Lễ ${hol.name} ${hol.daysLeft === 0 ? "HÔM NAY!" : hol.daysLeft === 1 ? "NGÀY MAI" : `còn ${hol.daysLeft} ngày`} ngày ${fmtDateDisp(hol.date)}.`, sound: hol.daysLeft <= 1 });
     const nextEv = S.getCustomEvents().filter(e => daysUntil(e.date) >= 0).sort((a, b) => a.date.localeCompare(b.date))[0];
-    if (nextEv && daysUntil(nextEv.date) <= 3 && !S.getSeenKey(`ev_${nextEv.id}`)) out.push({ msg: `Sự kiện ${nextEv.name} ${daysUntil(nextEv.date) === 0 ? "HÔM NAY" : daysUntil(nextEv.date) === 1 ? "NGÀY MAI" : `còn ${daysUntil(nextEv.date)} ngày`} (${fmtDateDisp(nextEv.date)})!`, sound: true });
+    if (nextEv && daysUntil(nextEv.date) <= 3 && !S.getSeenKey(`ev_${nextEv.id}`)) out.push({ key: `ev_${nextEv.id}`, tab: "holiday", msg: `Sự kiện ${nextEv.name} ${daysUntil(nextEv.date) === 0 ? "HÔM NAY" : daysUntil(nextEv.date) === 1 ? "NGÀY MAI" : `còn ${daysUntil(nextEv.date)} ngày`} (${fmtDateDisp(nextEv.date)})!`, sound: true });
     return out;
   }, []);
   const today = formatDate(new Date());
@@ -2140,10 +2142,11 @@ function PetAssistant() {
       if (nextAlert.length && !alertsDone.current) {
         alertsDone.current = true;
         setBubble(nextAlert[0].msg);
+        setBubbleTab(nextAlert[0].tab);
         if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
-        S.markSeenKey(nextAlert[0].msg.startsWith("⚠️") ? `expiry_${keyBase}` : nextAlert[0].msg.startsWith("💳") ? `renewal_${keyBase}` : nextAlert[0].msg.startsWith("Chi") ? `spend_${keyBase}` : `borrow_${keyBase}`);
-        setTimeout(() => setBubble(null), 7000);
-        if (nextAlert.length > 1) setTimeout(() => { setBubble(nextAlert[1].msg); setTimeout(() => setBubble(null), 7000); }, 7500);
+        S.markSeenKey(nextAlert[0].key);
+        setTimeout(() => setBubble(null), 8000);
+        if (nextAlert.length > 1) setTimeout(() => { setBubble(nextAlert[1].msg); setBubbleTab(nextAlert[1].tab); S.markSeenKey(nextAlert[1].key); setTimeout(() => setBubble(null), 8000); }, 8500);
       } else {
         const undonePlans = todayPlans.filter(p => !p.done);
         if (undonePlans.length > 0) { setBoard(true); setBoardTab("remind"); }
@@ -2398,9 +2401,15 @@ function PetAssistant() {
 
       {/* Bubble */}
       {bubble && !board && (
-        <div className="bg-card border border-line rounded-xl px-3 py-2 shadow-lg a-pop max-w-[200px]">
+        <div className="bg-card border border-line rounded-xl px-3 py-2 shadow-lg a-pop max-w-[220px]">
           <div className="text-[11px] text-ink leading-relaxed">{bubble}</div>
-          {todayRem.length > 0 && (
+          {bubbleTab && (
+            <button onClick={() => { setBoardTab(bubbleTab); setBoard(true); setBubble(null); setBubbleTab(null); }}
+              className="mt-1.5 w-full py-1.5 bg-ink text-bg rounded-md text-[10px] font-bold active:scale-95 min-h-[34px]">
+              Đi tới →
+            </button>
+          )}
+          {todayRem.length > 0 && !bubbleTab && (
             <button onClick={() => { S.markAllRemindersSeen(); setBubble("OK!"); setTimeout(() => setBubble(null), 1500); }}
               className="mt-1 w-full py-1 bg-ink text-bg rounded-md text-[9px] font-bold active:scale-95 min-h-[32px]">Đã xem</button>
           )}
