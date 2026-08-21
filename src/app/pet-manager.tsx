@@ -118,6 +118,40 @@ export function ChecklistManager({ onChanged }: { onChanged: () => void }) {
 }
 
 // ═══ HOLIDAYS — theo tháng hiện tại + tháng sau ═══
+function FestiveCountdown({ name, daysLeft, date }: { name: string; daysLeft: number; date: string }) {
+  const isXmas = name.includes("Gi") || name.toLowerCase().includes("christmas") || name.includes("Sinh");
+  const isTet = name.includes("T") && (name.includes("Nguy") || name.includes("D"));
+  if (isXmas) return (
+    <div className="xmas-card rounded-xl p-3 text-white relative">
+      <div className="flex items-center justify-between relative z-10">
+        <div>
+          <div className="text-[11px] font-bold flex items-center gap-1.5"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2ed573" strokeWidth="2"><path d="M12 2v20M6 8l6-6 6 6M4 13l8-8 8 8M2 18l10-10 10 10" /></svg>Giáng Sinh</div>
+          <div className="text-[9px] opacity-80">{fmtDateDisp(date)}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-black tnum leading-none">{daysLeft < 0 ? "0" : daysLeft}</div>
+          <div className="text-[8px] opacity-70">ngày nữa</div>
+        </div>
+      </div>
+    </div>
+  );
+  if (isTet) return (
+    <div className="tet-card rounded-xl p-3 text-white relative">
+      <div className="flex items-center justify-between relative z-10">
+        <div>
+          <div className="text-[11px] font-bold flex items-center gap-1.5 lantern-float"><svg width="16" height="16" viewBox="0 0 24 24" fill="#ffd700"><circle cx="12" cy="12" r="8" /><rect x="10" y="2" width="4" height="4" rx="1" /><rect x="10" y="18" width="4" height="4" rx="1" /></svg>Tết Nguyên Đán</div>
+          <div className="text-[9px] opacity-80">{fmtDateDisp(date)}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-black tnum leading-none text-yellow-300">{daysLeft < 0 ? "0" : daysLeft}</div>
+          <div className="text-[8px] opacity-70">ngày nữa</div>
+        </div>
+      </div>
+    </div>
+  );
+  return null;
+}
+
 export function HolidaysManager({ onChanged }: { onChanged: () => void }) {
   void onChanged;
   const [name, setName] = useState(""); const [date, setDate] = useState(""); const [note, setNote] = useState("");
@@ -131,6 +165,16 @@ export function HolidaysManager({ onChanged }: { onChanged: () => void }) {
     <div className="text-[10px] font-bold">Đếm ngược lễ & sự kiện</div>
     <div className="flex gap-1.5"><input value={name} onChange={e => setName(e.target.value)} placeholder="Tên sự kiện cá nhân" className={input} /><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${input} shrink-0 w-28`} /><button onClick={() => { if (!name.trim() || !date) return; S.addCustomEvent({ name: name.trim(), date, note: note.trim() || null }); setName(""); setDate(""); setNote(""); onChanged(); }} className="px-3 min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold shrink-0">+</button></div>
     {name && <input value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú" className={input} />}
+    {/* Festive countdown for Christmas + Tet — always visible */}
+    {(() => {
+      const now = new Date();
+      const y = now.getFullYear();
+      const xmas = { name: "Giang Sinh (25/12)", daysLeft: daysUntil(`${y}-12-25`), date: `${y}-12-25` };
+      const xmasNext = daysUntil(xmas.date) < 0 ? { ...xmas, date: `${y+1}-12-25`, daysLeft: daysUntil(`${y+1}-12-25`) } : xmas;
+      const tetApprox = { name: "Tet Nguyen Dan", daysLeft: daysUntil(`${y}-02-10`), date: `${y}-02-10` };
+      const tetNext = tetApprox.daysLeft < 0 ? { ...tetApprox, date: `${y+1}-02-10`, daysLeft: daysUntil(`${y+1}-02-10`) } : tetApprox;
+      return <div className="space-y-1.5"><FestiveCountdown {...xmasNext} /><FestiveCountdown {...tetNext} /></div>;
+    })()}
     {[...custom].sort((a, b) => a.date.localeCompare(b.date)).filter(e => daysUntil(e.date) >= 0).map(ev => <div key={ev.id} className={`flex gap-2 items-center rounded-lg border px-2 py-1.5 ${daysUntil(ev.date) === 0 ? "border-gold/40 bg-gold/5" : daysUntil(ev.date) <= 3 ? "border-blue/30" : "border-line bg-bg2"}`}>
       <div className="flex-1"><div className="text-[10px] font-bold">{ev.name}</div><div className={`text-[9px] ${daysUntil(ev.date) === 0 ? "text-gold font-bold" : daysUntil(ev.date) <= 3 ? "text-blue" : "text-mute"}`}>{daysUntil(ev.date) === 0 ? "HÔM NAY!" : daysUntil(ev.date) === 1 ? "NGÀY MAI" : `còn ${daysUntil(ev.date)} ngày`} · {fmtDateDisp(ev.date)}</div></div>
       <button onClick={() => { S.deleteCustomEvent(ev.id); onChanged(); }} className="w-7 h-7 text-mute">✕</button>

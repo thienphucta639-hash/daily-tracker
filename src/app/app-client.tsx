@@ -277,7 +277,7 @@ export default function App() {
   };
 
   if (!ok) return (
-    <div className="min-h-screen flex items-center justify-center bg-bg overflow-hidden">
+    <div className="fixed inset-0 flex items-center justify-center bg-bg overflow-hidden">
       <div className="text-center">
         {/* Main title — cinematic reveal */}
         <div style={{ animation: "splashIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both" }}>
@@ -306,7 +306,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-bg flex flex-col">
+    <div className="min-h-screen bg-bg flex flex-col" style={{ WebkitOverflowScrolling: "touch" }}>
       {/* STICKY HEADER — clock + timer always visible */}
       <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur-md border-b border-line">
         <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-gold/30 to-transparent" />
@@ -408,7 +408,7 @@ export default function App() {
       </header>
 
       {/* SCROLLABLE CONTENT */}
-      <main className="flex-1 max-w-xl w-full mx-auto px-3 pb-20 space-y-1.5 overflow-y-auto">
+      <main className="flex-1 max-w-xl w-full mx-auto px-3 pb-20 space-y-1.5 overflow-y-auto" style={{ WebkitOverflowScrolling: "touch" }}>
 
         {/* TAB SWITCHER for mobile */}
         <div className="flex gap-1 bg-card rounded-lg border border-line p-1 mt-2">
@@ -2070,7 +2070,14 @@ function PetAssistant() {
   const alertsDone = useRef(false);
   const allRem = S.getReminders().filter(r => !r.seen).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
   const todayRem = S.getActiveReminders();
-  const managerAlertCount = todayRem.length + S.getExpiringWithin(1).length + S.getRecurringDueWithin(2).length + S.getOverdueBorrows(30).length + (S.getSpendAnomaly()?.ratio && (S.getSpendAnomaly()?.ratio || 0) >= 3 ? 1 : 0);
+  const managerAlerts = [
+    ...(S.getExpiringWithin(1).length > 0 ? [{ n: S.getExpiringWithin(1).length, t: "han", l: "han" }] : []),
+    ...(S.getRecurringDueWithin(2).length > 0 ? [{ n: S.getRecurringDueWithin(2).length, t: "gia han", l: "renewal" }] : []),
+    ...(S.getOverdueBorrows(30).length > 0 ? [{ n: S.getOverdueBorrows(30).length, t: "muon", l: "others" }] : []),
+    ...(S.getChecklists().filter(cl => cl.items.length > 0 && cl.items.some(i => !i.checked)).length > 0 ? [{ n: 1, t: "checklist", l: "checklist" }] : []),
+    ...((S.getSpendAnomaly()?.ratio || 0) >= 3 ? [{ n: 1, t: "chi bat thuong", l: "stats" }] : []),
+  ];
+  const managerAlertCount = managerAlerts.reduce((s, a) => s + a.n, 0);
   const nextAlert = useMemo(() => {
     // Alert thật theo dữ liệu thật — một lần/ngày mỗi loại
     const keyBase = formatDate(new Date());
@@ -2450,9 +2457,11 @@ function PetAssistant() {
           <path d="M14 48h8c0 3-1 5-4 5s-4-2-4-5z" fill="#252525"/>
           <path d="M28 48h8c0 3-1 5-4 5s-4-2-4-5z" fill="#252525"/>
         </svg>
-        {/* Badge */}
+        {/* Badge — hiện chi tiết thay vì chỉ số */}
         {managerAlertCount > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-red rounded-full flex items-center justify-center text-[8px] text-bg font-bold a-blink border-2 border-bg">{Math.min(9, managerAlertCount)}</span>
+          <div className="absolute -top-1 -right-1 max-w-[140px] bg-red rounded-lg px-1.5 py-0.5 text-[7px] text-white font-bold leading-tight border border-bg shadow-lg">
+            {managerAlerts.map((a, i) => <div key={i}>{a.n > 1 ? `${a.n} ` : ""}{a.t}</div>)}
+          </div>
         )}
       </div>
 
