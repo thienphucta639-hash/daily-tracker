@@ -70,6 +70,20 @@ export function fmtCurrency(n: number): string {
   return new Intl.NumberFormat("vi-VN").format(n) + "đ";
 }
 
+// Compact Vietnamese money for tight cards: 86k, 1.5m, 10m, 1.2tỷ
+export function fmtCompact(n: number): string {
+  const a = Math.abs(n);
+  const fmt = (v: number) => new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 1 }).format(v);
+  if (a >= 1_000_000_000) return fmt(n / 1_000_000_000) + "tỷ";
+  if (a >= 1_000_000) return fmt(n / 1_000_000) + "m";
+  if (a >= 1_000) return fmt(n / 1_000) + "k";
+  return String(n);
+}
+
+export function daysUntil(dateStr: string): number {
+  return Math.round((new Date(dateStr + "T00:00:00").getTime() - new Date(formatDate(new Date()) + "T00:00:00").getTime()) / 86400000);
+}
+
 export function fmtDur(m: number): string {
   if (m < 60) return `${m}p`;
   const h = Math.floor(m / 60);

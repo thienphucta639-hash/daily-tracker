@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import {
   formatDate, fmtDateDisp, fmtDateFull, fmtCurrency, fmtDur, fmtTimeVN, fmtElapsed,
   getTimeOfDay, getTimeEmoji, nowHHMM, autoMealType, mealPeriod, parseMoney,
@@ -10,17 +10,30 @@ import * as S from "@/lib/storage";
 import { migrateTimezone } from "@/lib/migrate";
 import { migrateImages, resolveImage, saveImage } from "@/lib/imgdb";
 import FinanceTools from "./finance-tools";
+import { ExpiryManager, RecurringManager, OthersManager, Top3Manager, ChecklistManager, HolidaysManager, playNotify } from "./pet-manager";
+import { fmtCompact, daysUntil } from "@/lib/utils";
+import { getUpcomingHolidays } from "@/lib/holidays";
 
-/* ═══ ICONS ═══ */
+/* ═══ ICONS — 100% custom SVG, zero emoji system ═══ */
 function Ic({ d, size = 18, sw = 1.8, cls }: { d: string; size?: number; sw?: number; cls?: string }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" className={cls}><path d={d} /></svg>;
 }
-// Category icon — SVG if available, fallback to emoji
+
+// Default icon — simple dot circle if category unknown
+const DEFAULT_ICON = "M12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12z";
+// Map emoji (legacy habits) → icon category for habits saved before migration
+const LEGACY_MAP: Record<string, string> = {
+  "💼": "work", "🏃": "exercise", "📚": "study", "🧘": "personal", "🎮": "entertainment", "🏠": "chores",
+  "👥": "social", "😴": "rest", "🍜": "eat", "🚗": "travel", "🛍️": "shopping", "📄": "bills",
+  "🎬": "entertainment", "💊": "health", "📦": "other", "✅": "work", "✍️": "study", "🎯": "work",
+  "🧹": "chores", "💤": "rest", "🍎": "eat", "📋": "work",
+  "🌅": "breakfast", "☀️": "lunch", "🌤️": "personal", "🌙": "dinner", "🌃": "snack",
+  "🥦": "eat", "🥩": "eat", "🍌": "eat", "⚽": "exercise", "🏋️": "exercise", "📖": "study", "🚰": "eat",
+};
+
 function CI({ cat, size = 14 }: { cat: string; size?: number }) {
-  const icon = CAT_ICONS[cat];
-  if (icon) return <Ic d={icon} size={size} sw={1.6} cls="text-mute shrink-0" />;
-  const a = ACTS.find(x => x.value === cat) || EXPS.find(x => x.value === cat);
-  return <span className="shrink-0" style={{ fontSize: size * 0.85 }}>{a?.emoji || "•"}</span>;
+  const path = CAT_ICONS[cat] || CAT_ICONS[LEGACY_MAP[cat] || "other"] || DEFAULT_ICON;
+  return <Ic d={path} size={size} sw={1.6} cls="text-mute shrink-0" />;
 }
 const P = {
   plus: "M12 5v14M5 12h14", x: "M18 6 6 18M6 6l12 12", left: "m15 18-6-6 6-6", right: "m9 18 6-6-6-6", down: "m6 9 6 6 6-6",
@@ -37,6 +50,12 @@ const P = {
   drop: "M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z", clock: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2",
   note: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
   target: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12zM12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
+  alert: "M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01",
+  leaf: "M11 20A7 7 0 0 1 9.8 6.1C15.5 5.3 19 2 19 2c0 4.5-1.4 12.5-8 15.5M2 21c0-3 1.85-5.36 5.08-6.94",
+  repeat: "M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3",
+  box: "M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7zM3.3 7 12 12l8.7-5M12 22V12",
+  star: "M12 2l3.1 6.3L22 9.3l-5 4.9 1.2 6.8-6.2-3.2L5.8 21 7 14.2 2 9.3l6.9-1z",
+  chart: "M3 3v18h18M18 17V9M13 17V5M8 17v-3",
 };
 
 export default function App() {
@@ -378,9 +397,9 @@ export default function App() {
               {/* Stats */}
               {(totCal > 0 || totExp > 0 || totAct > 0) && (
                 <div className="flex gap-1 mt-1 overflow-x-auto">
-                  {totCal > 0 && <span className="shrink-0 bg-gold2 text-gold border border-gold/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">🔥{totCal.toLocaleString()}</span>}
-                  {totExp > 0 && <span className="shrink-0 bg-red2 text-red border border-red/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">💸{fmtCurrency(totExp)}</span>}
-                  {totAct > 0 && <span className="shrink-0 bg-blue2 text-blue border border-blue/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum">⏱{fmtDur(totAct)}</span>}
+                  {totCal > 0 && <span className="shrink-0 bg-gold2 text-gold border border-gold/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum flex items-center gap-1"><Ic d={P.flame} size={11} />{totCal.toLocaleString()}</span>}
+                  {totExp > 0 && <span className="shrink-0 bg-red2 text-red border border-red/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum flex items-center gap-1"><Ic d={P.wallet} size={11} />{fmtCurrency(totExp)}</span>}
+                  {totAct > 0 && <span className="shrink-0 bg-blue2 text-blue border border-blue/20 px-1.5 py-0.5 rounded text-[10px] font-semibold tnum flex items-center gap-1"><Ic d={P.clock} size={11} />{fmtDur(totAct)}</span>}
                 </div>
               )}
             </>
@@ -393,9 +412,9 @@ export default function App() {
 
         {/* TAB SWITCHER for mobile */}
         <div className="flex gap-1 bg-card rounded-lg border border-line p-1 mt-2">
-          <button onClick={() => setTab("main")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "main" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>📋 Chung</button>
-          <button onClick={() => setTab("exp")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "exp" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>💰 Chi tiêu</button>
-          <button onClick={() => setTab("plan")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all ${tab === "plan" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>📅 Kế hoạch</button>
+          <button onClick={() => setTab("main")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${tab === "main" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}><Ic d={P.clip} size={14} /> Chung</button>
+          <button onClick={() => setTab("exp")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${tab === "exp" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}><Ic d={P.wallet} size={14} /> Chi tiêu</button>
+          <button onClick={() => setTab("plan")} className={`flex-1 min-h-[44px] py-2 rounded-md text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 ${tab === "plan" ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}><Ic d={P.calendar} size={14} /> Kế hoạch</button>
         </div>
 
         {tab === "main" ? (
@@ -463,7 +482,7 @@ export default function App() {
                     return (<div key={h.id} className={`py-2 group ${isLate ? "bg-red/5 -mx-2.5 px-2.5 rounded" : ""}`}>
                       <div className="flex items-start gap-2">
                         <button onClick={() => { S.toggleHabitCheck(h.id, date); reload(); }} className={`w-7 h-7 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 mt-0.5 ${ck ? "bg-green border-green text-bg" : isLate ? "border-red" : "border-line hover:border-ink"}`}>{ck && <Ic d={P.check} size={13} sw={3} />}</button>
-                        <span className="text-sm mt-0.5">{h.emoji}</span>
+                        <span className="mt-0.5 flex items-center justify-center w-5"><CI cat={h.emoji} size={15} /></span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className={`text-[12px] font-medium ${ck ? "line-through text-mute" : ""}`}>{h.name}</span>
@@ -475,7 +494,7 @@ export default function App() {
                           {/* Progress bar for target habits */}
                           {hasTarget && <div className="h-1 bg-bg2 rounded-full mt-1 overflow-hidden"><div className="h-full bg-green rounded-full transition-all" style={{ width: `${pct}%` }} /></div>}
                         </div>
-                        {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum shrink-0 mt-0.5">{hs}🔥</span>}
+                        {hs > 0 && <span className="text-[9px] bg-gold2 text-gold px-1 py-0.5 rounded font-bold tnum shrink-0 mt-0.5 flex items-center gap-0.5">{hs}<Ic d={P.flame} size={10} /></span>}
                       </div>
                       {/* Action buttons */}
                       <div className="flex gap-1 mt-1 pl-9">
@@ -519,7 +538,7 @@ export default function App() {
                   {[...qnotes.filter(n => n.pinned), ...qnotes.filter(n => !n.pinned)].map(n => (
                     <div key={n.id} className="flex items-start gap-1.5 group py-0.5">
                       <span className="text-[9px] text-mute tnum shrink-0 mt-0.5">{n.time}</span>
-                      {n.pinned && <span className="text-[9px] shrink-0">📌</span>}
+                      {n.pinned && <span className="shrink-0 text-gold flex items-center"><Ic d={P.pin} size={9} /></span>}
                       <span className={`text-[12px] flex-1 ${n.pinned ? "font-medium" : ""}`}>{n.text}</span>
                       <button onClick={() => { const t = prompt("Sửa ghi chú:", n.text); if (t !== null && t.trim()) { S.editQuickNote(n.id, t.trim()); reload(); } }} className="text-mute2 hover:text-ink opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Sửa"><Ic d={P.clip} size={10} /></button>
                       <button onClick={() => { S.togglePinNote(n.id); reload(); }} className="text-mute2 hover:text-gold opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Ghim"><Ic d={P.pin} size={10} /></button>
@@ -577,10 +596,10 @@ export default function App() {
                 <div className="space-y-2">
                   {Object.entries(mp).sort((a, b) => a[0].localeCompare(b[0])).map(([k, ms]) => {
                     const [, label, emoji] = k.split("|");
-                    return (<div key={k}><div className="text-[9px] font-bold text-mute2 mb-0.5 uppercase tracking-wider">{emoji} {label}</div>
+                    return (<div key={k}><div className="text-[9px] font-bold text-mute2 mb-0.5 uppercase tracking-wider flex items-center gap-1"><CI cat={emoji} size={11} /> {label}</div>
                       {ms.map(m => { const mImg = getImg(m.id, m.image); return (<div key={m.id} className="flex items-center gap-2 py-1 group">
                         {mImg ? <button onClick={() => setImg(mImg)} className="w-8 h-8 rounded-md overflow-hidden shrink-0 ring-1 ring-line"><img src={mImg} alt="" className="w-full h-full object-cover" /></button>
-                        : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0">🍽️</span>}
+                        : <span className="w-8 h-8 rounded-md bg-bg2 border border-line flex items-center justify-center text-xs shrink-0"><CI cat="eat" size={14} /></span>}
                         <span className="text-[12px] font-medium flex-1 truncate">{m.foodName}</span>
                         {m.time && <span className="text-[10px] text-mute tnum shrink-0">{m.time}</span>}
                        {m.calories != null && m.calories > 0 && <span className="text-[10px] bg-gold2 text-gold px-1 py-0.5 rounded font-semibold tnum shrink-0">{m.calories}cal</span>}
@@ -1105,7 +1124,7 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
         </div>
       )}
       {/* Step 1: Meal type + name + photo + time */}
-      <div className="flex gap-1 mb-2">{MEALS.map(m => (<button key={m.value} onClick={() => setMt(m.value)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all min-h-[40px] ${mt === m.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><div className="text-sm">{m.emoji}</div>{m.label}</button>))}</div>
+      <div className="flex gap-1 mb-2">{MEALS.map(m => (<button key={m.value} onClick={() => setMt(m.value)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all min-h-[40px] flex flex-col items-center justify-center gap-0.5 ${mt === m.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={m.value} size={16} />{m.label}</button>))}</div>
       <ImgP value={im} onChange={setIm} />
       <input type="text" value={fn} onChange={e => setFn(e.target.value)} placeholder="Tên món" autoFocus className={`${ic} mb-2`} />
       <input type="time" value={tm} onChange={e => setTm(e.target.value)} className={`${ic} mb-2 min-h-[44px]`} />
@@ -1198,7 +1217,7 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
 function ActModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
   const [cat, setCat] = useState("work"); const [ti, setTi] = useState(""); const [dur, setDur] = useState(""); const [st, setSt] = useState("");
   return (<Wrap title="Thêm hoạt động" onClose={onClose}>
-    <div className="flex flex-wrap gap-1 mb-2.5">{ACTS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{c.emoji} {c.label}</button>))}</div>
+    <div className="flex flex-wrap gap-1 mb-2.5">{ACTS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2.5 py-1.5 rounded-md text-[10px] font-semibold transition-all flex items-center gap-1 ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={12} /> {c.label}</button>))}</div>
     <input type="text" value={ti} onChange={e => setTi(e.target.value)} placeholder="Hoạt động" autoFocus className={`${ic} mb-2`} />
     <div className="flex gap-1.5 mb-2.5"><input type="time" value={st} onChange={e => setSt(e.target.value)} className={`${ic} flex-1`} /><input type="number" value={dur} onChange={e => setDur(e.target.value)} placeholder="Phút" className={`${ic} flex-1`} /></div>
     <button onClick={() => { if (!ti.trim()) return; S.addActivity({ date, category: cat, title: ti.trim(), description: null, durationMinutes: dur ? parseInt(dur) : null, startTime: st || null, endTime: null }); onDone(); }} disabled={!ti.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
@@ -1222,14 +1241,14 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
           {expPresets.map(p => (
             <button key={p.id} type="button" onClick={() => { setDs(p.description); setAm(String(p.amount)); setCat(p.category); }}
               className="shrink-0 flex flex-col items-start px-2 py-1.5 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[36px] active:scale-95 text-left">
-              <span>{EXPS.find(x => x.value === p.category)?.emoji} {p.description}</span>
+              <CI cat={p.category} size={12} /> {p.description}
               <span className="text-mute font-normal tnum">{fmtCurrency(p.amount)}</span>
             </button>
           ))}
         </div>
       </div>
     )}
-    <div className="flex flex-wrap gap-1 mb-2.5">{EXPS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}>{c.emoji} {c.label}</button>))}</div>
+    <div className="flex flex-wrap gap-1 mb-2.5">{EXPS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2.5 py-1.5 rounded-md text-[10px] font-semibold transition-all flex items-center gap-1 ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={12} /> {c.label}</button>))}</div>
     <ImgP value={im} onChange={setIm} />
     <input type="text" value={ds} onChange={e => setDs(e.target.value)} placeholder="Mô tả" autoFocus className={`${ic} mb-2`} />
     <div className="mb-2"><MoneyIn value={am} onChange={setAm} placeholder="Số tiền" /></div>
@@ -1263,7 +1282,7 @@ function DebtSection({ onChanged }: { onChanged: () => void }) {
     { v: 0, l: "Thấp", c: "border-line text-mute" },
     { v: 1, l: "Trung bình", c: "border-blue/40 text-blue" },
     { v: 2, l: "Cao", c: "border-gold/40 text-gold" },
-    { v: 3, l: "🔴 Khẩn", c: "border-red/40 text-red" },
+    { v: 3, l: "Khẩn cấp", c: "border-red/40 text-red" },
   ];
 
   return (
@@ -1342,7 +1361,7 @@ function AddDebtModal({ onDone, onClose }: { onDone: () => void; onClose: () => 
       <input type="date" value={dueDate} min={S.getAllDataDates()[0] || formatDate(new Date())} onChange={e => setDueDate(e.target.value)} className="w-full px-3 py-3 rounded-lg bg-bg2 border border-line text-base outline-none focus:border-ink min-h-[52px] mb-2" />
       <input type="number" value={rate} onChange={e => setRate(e.target.value)} placeholder="Lãi suất %/năm (tùy chọn)" className={`${ic} mb-2`} />
       <div className="grid grid-cols-4 gap-1 mb-2.5">
-        {[{ v: 0, l: "Thấp" }, { v: 1, l: "TB" }, { v: 2, l: "Cao" }, { v: 3, l: "🔴 Khẩn" }].map(p => (
+        {[{ v: 0, l: "Thấp" }, { v: 1, l: "TB" }, { v: 2, l: "Cao" }, { v: 3, l: "Khẩn cấp" }].map(p => (
           <button key={p.v} type="button" onClick={() => setPriority(p.v)} className={`py-2 rounded-md text-[10px] font-bold min-h-[40px] border ${priority === p.v ? "bg-ink text-bg border-ink" : "bg-bg2 border-line text-mute"}`}>{p.l}</button>
         ))}
       </div>
@@ -1353,36 +1372,36 @@ function AddDebtModal({ onDone, onClose }: { onDone: () => void; onClose: () => 
 
 function AddHabitModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("✅");
+  const [icon, setIcon] = useState("personal");
   const [desc, setDesc] = useState("");
   const [targetStr, setTargetStr] = useState("");
   const [unit, setUnit] = useState("");
   const presets = [
-    { n: "Uống nước", e: "💧", d: "8 cốc/ngày", t: 8, u: "cốc" },
-    { n: "Tập gym", e: "💪", d: "Chest + Shoulder", t: 4, u: "sets" },
-    { n: "Đọc sách", e: "📖", d: "30 phút/ngày", t: 30, u: "phút" },
-    { n: "Chạy bộ", e: "🏃", d: "5km", t: 5, u: "km" },
-    { n: "Uống thuốc", e: "💊", d: "Sau bữa ăn", t: 1, u: "lần" },
-    { n: "Thiền", e: "🧘", d: "10 phút sáng", t: 10, u: "phút" },
+    { n: "Uống nước", i: "eat", d: "8 cốc/ngày", t: 8, u: "cốc" },
+    { n: "Tập gym", i: "exercise", d: "Chest + Shoulder", t: 4, u: "sets" },
+    { n: "Đọc sách", i: "study", d: "30 phút/ngày", t: 30, u: "phút" },
+    { n: "Chạy bộ", i: "exercise", d: "5km", t: 5, u: "km" },
+    { n: "Uống thuốc", i: "health" as const, d: "Sau bữa ăn", t: 1, u: "lần" },
+    { n: "Thiền", i: "personal", d: "10 phút sáng", t: 10, u: "phút" },
   ];
   return (<Wrap title="Thêm thói quen" onClose={onClose}>
     <div className="grid grid-cols-3 gap-1.5 mb-2.5">
       {presets.map(p => (
-        <button key={p.n} type="button" onClick={() => { S.addHabit(p.n, p.e, p.d, date, p.t, p.u); onDone(); }}
+        <button key={p.n} type="button" onClick={() => { S.addHabit(p.n, ({ eat: "🍜", exercise: "🏃", study: "📚", health: "💊", personal: "🧘" } as Record<string, string>)[p.i] || "✅", p.d, date, p.t, p.u); onDone(); }}
           className="flex flex-col items-center gap-0.5 py-2 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[52px] active:scale-95 hover:border-ink transition-all">
-          <span className="text-base">{p.e}</span><span>{p.n}</span><span className="text-[8px] text-mute font-normal">{p.t} {p.u}</span>
+          <CI cat={p.i} size={16} /><span>{p.n}</span><span className="text-[8px] text-mute font-normal">{p.t} {p.u}</span>
         </button>
       ))}
     </div>
     <div className="text-[9px] text-mute2 font-bold uppercase tracking-widest mb-1">Tự tạo:</div>
-    <div className="grid grid-cols-5 gap-1 mb-2">{["✅","📖","🏃","💊","🧘","💪","💧","🎯","✍️","🛌","🧹","💤","🍎","🚫","💻"].map(e => (<button key={e} type="button" onClick={() => setEmoji(e)} className={`h-8 rounded-md flex items-center justify-center text-sm transition-all ${emoji === e ? "bg-ink text-bg" : "bg-bg2 border border-line"}`}>{e}</button>))}</div>
+    <div className="grid grid-cols-5 gap-1 mb-2">{ACTS.slice(0, 10).map(c => (<button key={c.value} type="button" onClick={() => setIcon(c.value)} className={`h-8 rounded-md flex items-center justify-center transition-all ${icon === c.value ? "bg-ink text-bg" : "bg-bg2 border border-line"}`}><CI cat={c.value} size={13} /></button>))}</div>
     <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên thói quen" autoFocus className={`${ic} mb-2`} />
     <input type="text" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Chi tiết / cách thực hiện" className={`${ic} mb-2`} />
     <div className="flex gap-2 mb-2.5">
       <input type="number" value={targetStr} onChange={e => setTargetStr(e.target.value)} placeholder="Mục tiêu" className={`${ic} flex-1`} />
       <input type="text" value={unit} onChange={e => setUnit(e.target.value)} placeholder="Đơn vị (lần, phút, km...)" className={`${ic} flex-1`} />
     </div>
-    <button type="button" onClick={() => { if (!name.trim()) return; S.addHabit(name.trim(), emoji, desc.trim() || null, date, targetStr ? parseInt(targetStr) : null, unit.trim() || null); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">Thêm thói quen</button>
+    <button type="button" onClick={() => { if (!name.trim()) return; S.addHabit(name.trim(), ({ eat: "🍜", exercise: "🏃", study: "📚", health: "💊", personal: "🧘", work: "💼", rest: "😴", chores: "🏠", travel: "🧳", social: "👥" } as Record<string, string>)[icon] || "✅", desc.trim() || null, date, targetStr ? parseInt(targetStr) : null, unit.trim() || null); onDone(); }} disabled={!name.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">Thêm thói quen</button>
   </Wrap>);
 }
 
@@ -1600,7 +1619,7 @@ function InvModal({ date, exps: dayExps, onClose }: { date: string; exps: S.Expe
           const items = byDate[dk]; const dayTot = items.reduce((s, e) => s + e.amount, 0);
           return (<div key={dk}>
             {isMultiDay && <div className="flex items-center justify-between text-[11px] font-bold mb-0.5 bg-bg2 rounded px-2 py-1"><span>{fmtDateDisp(dk)}</span><span className="text-red tnum">{fmtCurrency(dayTot)}</span></div>}
-            {items.map(it => { const ec = EXPS.find(x => x.value === it.category); return <div key={it.id} className="flex items-center justify-between pl-3 py-0.5 text-[11px]"><span className="truncate flex-1">{ec?.emoji} {it.description}</span><span className="text-mute tnum shrink-0 ml-2">{fmtCurrency(it.amount)}</span></div>; })}
+            {items.map(it => { return <div key={it.id} className="flex items-center justify-between pl-3 py-0.5 text-[11px]"><span className="truncate flex-1 flex items-center gap-1"><CI cat={it.category} size={11} /> {it.description}</span><span className="text-mute tnum shrink-0 ml-2">{fmtCurrency(it.amount)}</span></div>; })}
           </div>);
         })}
       </div>
@@ -1621,6 +1640,7 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
   const [time, setTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [cat, setCat] = useState("work");
   const [priority, setPriority] = useState(0);
   const [budgetStr, setBudgetStr] = useState("");
@@ -1632,20 +1652,23 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
 
   const doSave = () => {
     if (!title.trim()) return;
-    const plan = S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed });
-    if (remind) S.addReminder({ planId: plan.id, planDate: date, planTitle: title.trim(), planTime: time || null, planDetail: detail.trim() || null, remindAt: remindDate, color: remindColor, attachment: remindNote.trim() || null });
+    const plan = S.addPlan({ date, time: time || null, endTime: endTime || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed });
+    if (remind) S.addReminder({ planId: plan.id, planDate: date, planTitle: title.trim(), planTime: time || null, planEndTime: endTime || null, planDetail: detail.trim() || null, remindAt: remindDate, color: remindColor, attachment: remindNote.trim() || null });
     onDone();
   };
 
   return (<Wrap title={step === 1 ? `Kế hoạch · ${fmtDateDisp(date)}` : "Chi tiết & nhắc nhở"} onClose={onClose}>
     {step === 1 ? (<>
       {/* User-created quick plans */}
-      {S.getPlanPresets().length > 0 && <div className="mb-2.5"><div className="text-[9px] text-mute font-bold mb-1">Mẫu kế hoạch của tôi:</div><div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">{S.getPlanPresets().map(p=><div key={p.id} className="relative"><button type="button" onClick={()=>{S.applyPlanPreset(p.id,date);onDone();}} className="w-full min-h-[48px] text-left bg-bg2 border border-line rounded-lg px-2 py-1.5 active:scale-95"><div className="flex items-center gap-1"><CI cat={p.category} size={12}/><span className="text-[10px] font-bold truncate">{p.title}</span></div><div className="text-[8px] text-mute tnum">{p.time||"Không giờ"}{p.detail?` · ${p.detail}`:""}</div></button><button type="button" onClick={()=>{if(confirm("Xóa mẫu?"))S.deletePlanPreset(p.id);}} className="absolute top-1 right-1 w-6 h-6 flex items-center justify-center text-mute hover:text-red"><Ic d={P.x} size={9}/></button></div>)}</div></div>}
+      {S.getPlanPresets().length > 0 && <div className="mb-2.5"><div className="text-[9px] text-mute font-bold mb-1">Mẫu kế hoạch của tôi:</div><div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">{S.getPlanPresets().map(p=><div key={p.id} className="relative"><button type="button" onClick={()=>{S.applyPlanPreset(p.id,date);onDone();}} className="w-full min-h-[48px] text-left bg-bg2 border border-line rounded-lg px-2 py-1.5 active:scale-95"><div className="flex items-center gap-1"><CI cat={p.category} size={12}/><span className="text-[10px] font-bold truncate">{p.title}</span></div><div className="text-[8px] text-mute tnum">{p.time ? `${p.time}${p.endTime ? `–${p.endTime}` : ""}` : "Không giờ"}{p.detail?` · ${p.detail}`:""}</div></button><button type="button" onClick={()=>{if(confirm("Xóa mẫu?"))S.deletePlanPreset(p.id);}} className="absolute top-1 right-1 w-6 h-6 flex items-center justify-center text-mute hover:text-red"><Ic d={P.x} size={9}/></button></div>)}</div></div>}
       {/* Step 1: user-defined plan only */}
       <div className="text-[9px] text-mute font-bold mb-1">Chọn loại kế hoạch (tối đa 8 icon):</div>
       <div className="grid grid-cols-4 gap-1.5 mb-2.5">{ACTS.slice(0, 8).map(c => (<button type="button" key={c.value} onClick={() => setCat(c.value)} className={`flex flex-col items-center justify-center py-2 rounded-lg text-[8px] font-bold min-h-[48px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={15} />{c.label}</button>))}</div>
       <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề" autoFocus className={`${ic} mb-2`} />
-      <input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} mb-2 min-h-[44px]`} />
+      <div className="grid grid-cols-2 gap-1.5 mb-2">
+        <label className="text-[9px] text-mute font-bold">Bắt đầu<input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} mt-0.5 min-h-[44px]`} /></label>
+        <label className="text-[9px] text-mute font-bold">Kết thúc (tùy chọn)<input type="time" value={endTime} min={time || undefined} onChange={e => setEndTime(e.target.value)} className={`${ic} mt-0.5 min-h-[44px]`} /></label>
+      </div>
       <div className="flex gap-2">
         <button type="button" onClick={doSave} disabled={!title.trim()} className="flex-1 py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">Thêm nhanh</button>
         <button type="button" onClick={() => setStep(2)} disabled={!title.trim()} className="flex-1 py-2.5 rounded-lg bg-bg2 border border-line text-ink font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px] text-[11px]">Chi tiết →</button>
@@ -1659,13 +1682,13 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
       <input type="text" value={detail} onChange={e => setDetail(e.target.value)} placeholder="Chi tiết / mục tiêu" className={`${ic} mb-2`} />
       <div className="mb-2"><MoneyIn value={budgetStr} onChange={setBudgetStr} placeholder="Chi phí dự kiến" /></div>
       <div className="grid grid-cols-3 gap-1.5 mb-2.5">
-        {[{ v: 0, l: "Bình thường" }, { v: 1, l: "⚠️ Quan trọng" }, { v: 2, l: "🔴 Gấp" }].map(p => (
+        {[{ v: 0, l: "Bình thường" }, { v: 1, l: "Quan trọng" }, { v: 2, l: "Gấp" }].map(p => (
           <button type="button" key={p.v} onClick={() => setPriority(p.v)} className={`py-2 rounded-md text-[10px] font-bold min-h-[40px] transition-all border ${priority === p.v ? "bg-ink text-bg border-ink" : "bg-bg2 border-line text-mute"}`}>{p.l}</button>
         ))}
       </div>
       {/* Reminder */}
       <button type="button" onClick={() => setRemind(!remind)} className={`w-full py-2 rounded-md text-[10px] font-bold min-h-[40px] mb-1.5 transition-all border ${remind ? "bg-gold2 border-gold/30 text-gold" : "bg-bg2 border-line text-mute"}`}>
-        🔔 {remind ? "Nhắc nhở: BẬT" : "Thêm nhắc nhở"}
+        {remind ? "🔔 Nhắc nhở: BẬT" : "🔔 Thêm nhắc nhở"}
       </button>
       {remind && (() => {
         const today = formatDate(new Date());
@@ -1693,7 +1716,7 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
           </div>
         );
       })()}
-      <button type="button" onClick={()=>{S.addPlanPreset({title:title.trim(),detail:detail.trim()||null,time:time||null,category:cat,priority,budget:budgetParsed});alert("Đã lưu mẫu kế hoạch!");}} className="w-full min-h-[38px] mb-1.5 bg-green2 border border-green/20 text-green rounded-lg text-[9px] font-bold">Lưu làm mẫu thêm nhanh</button>
+      <button type="button" onClick={()=>{S.addPlanPreset({title:title.trim(),detail:detail.trim()||null,time:time||null,endTime:endTime||null,category:cat,priority,budget:budgetParsed});alert("Đã lưu mẫu kế hoạch!");}} className="w-full min-h-[38px] mb-1.5 bg-green2 border border-green/20 text-green rounded-lg text-[9px] font-bold">Lưu làm mẫu thêm nhanh</button>
       <div className="flex gap-2">
         <button type="button" onClick={() => setStep(1)} className="py-2.5 px-4 rounded-lg bg-bg2 border border-line text-mute font-bold active:scale-[0.98] min-h-[48px]">←</button>
         <button type="button" onClick={doSave} className="flex-1 py-2.5 rounded-lg bg-ink text-bg font-bold active:scale-[0.98] min-h-[48px]">Thêm kế hoạch</button>
@@ -1895,7 +1918,7 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-mute flex-wrap">
                     <CI cat={p.category} size={12} />
-                    {p.time && <span className="tnum">{p.time}</span>}
+                    {p.time && <span className="tnum">{p.time}{p.endTime ? `–${p.endTime}` : ""}</span>}
                     {p.detail && <span className="truncate max-w-[150px]">{p.detail}</span>}
                     {p.budget != null && p.budget > 0 && <span className="bg-red2 text-red border border-red/20 px-1 py-0.5 rounded font-semibold tnum">{fmtCurrency(p.budget)}</span>}
                   </div>
@@ -2036,13 +2059,37 @@ const PET_TALKS = [
 function PetAssistant() {
   const [bubble, setBubble] = useState<string | null>(null);
   const [board, setBoard] = useState(false);
-  const [boardTab, setBoardTab] = useState<"remind" | "stats" | "quick">("remind");
+  const [boardTab, setBoardTab] = useState<"remind" | "stats" | "expiry" | "renewal" | "others" | "top3" | "checklist" | "holiday">("remind");
   const [show, setShow] = useState(false);
   const [idx, setIdx] = useState(0);
+  const [, setPetVersion] = useState(0);
+  const petRefresh = () => setPetVersion(v => v + 1);
   const longRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alertsDone = useRef(false);
   const allRem = S.getReminders().filter(r => !r.seen).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
   const todayRem = S.getActiveReminders();
+  const managerAlertCount = todayRem.length + S.getExpiringWithin(1).length + S.getRecurringDueWithin(2).length + S.getOverdueBorrows(30).length + (S.getSpendAnomaly()?.ratio && (S.getSpendAnomaly()?.ratio || 0) >= 3 ? 1 : 0);
+  const nextAlert = useMemo(() => {
+    // Alert thật theo dữ liệu thật — một lần/ngày mỗi loại
+    const keyBase = formatDate(new Date());
+    const out: { msg: string; sound: boolean }[] = [];
+    const ex = S.getExpiringWithin(1);
+    if (ex.length && !S.getSeenKey(`expiry_${keyBase}`)) out.push({ msg: `⚠️ ${ex.length} thứ sắp hết hạn: ${ex.map(x => x.name).join(", ")}`, sound: true });
+    const du = S.getRecurringDueWithin(2);
+    if (du.length && !S.getSeenKey(`renewal_${keyBase}`)) out.push({ msg: `💳 ${du.length} khoản gia hạn gần hạn: ${du.map(x => x.name).join(", ")}`, sound: true });
+    const an = S.getSpendAnomaly();
+    if (an && an.ratio >= 3 && !S.getSeenKey(`spend_${keyBase}`)) out.push({ msg: `Chi hôm nay gấp ${an.ratio.toFixed(1)}× 7 ngày qua. OK chứ?`, sound: true });
+    const od = S.getOverdueBorrows(30);
+    if (od.length && !S.getSeenKey(`borrow_${keyBase}`)) out.push({ msg: `${od[0].borrower} mượn ${od[0].item} ${od[0].daysLent} ngày rồi, đòi chưa?`, sound: false });
+    const openCl = S.getChecklists().filter(cl => cl.items.length > 0 && cl.items.some(i => !i.checked));
+    if (openCl.length && !S.getSeenKey(`cl_${keyBase}`)) out.push({ msg: `Checklist ${openCl[0].name} còn ${openCl[0].items.filter(i => !i.checked).length} món chưa đem! Rà lại nút “Đem đâu” trước khi đi nhé.`, sound: true });
+    const hol = getUpcomingHolidays(1)[0];
+    if (hol && hol.daysLeft <= 7 && !S.getSeenKey(`hol_${hol.date}`)) out.push({ msg: `Lễ ${hol.name} ${hol.daysLeft === 0 ? "HÔM NAY!" : hol.daysLeft === 1 ? "NGÀY MAI" : `còn ${hol.daysLeft} ngày`} ngày ${fmtDateDisp(hol.date)}.`, sound: hol.daysLeft <= 1 });
+    const nextEv = S.getCustomEvents().filter(e => daysUntil(e.date) >= 0).sort((a, b) => a.date.localeCompare(b.date))[0];
+    if (nextEv && daysUntil(nextEv.date) <= 3 && !S.getSeenKey(`ev_${nextEv.id}`)) out.push({ msg: `Sự kiện ${nextEv.name} ${daysUntil(nextEv.date) === 0 ? "HÔM NAY" : daysUntil(nextEv.date) === 1 ? "NGÀY MAI" : `còn ${daysUntil(nextEv.date)} ngày`} (${fmtDateDisp(nextEv.date)})!`, sound: true });
+    return out;
+  }, []);
   const today = formatDate(new Date());
   const todayMeals = S.getMeals(today);
   const todayExps = S.getExpenses(today);
@@ -2066,15 +2113,17 @@ function PetAssistant() {
         const planMin = ph * 60 + pm;
         const nowMin = now.getHours() * 60 + now.getMinutes();
         const diff = planMin - nowMin;
-        // 30 min before → pet reminds
-        if (diff > 0 && diff <= 30 && !bubble) {
-          setBubble(`⏰ "${p.title}" bắt đầu lúc ${p.time} — còn ${diff} phút!`);
-          setTimeout(() => setBubble(null), 8000);
+        const remindBefore = (p.priority || 0) >= 2 ? 60 : (p.priority || 0) >= 1 ? 45 : 30;
+        const alertBefore = (p.priority || 0) >= 2 ? 15 : (p.priority || 0) >= 1 ? 10 : 5;
+        // Pet notification before important transition
+        if (diff > 0 && diff <= remindBefore && !bubble) {
+          setBubble(`${(p.priority || 0) >= 2 ? "🔴 GẤP" : "⏰"} "${p.title}" ${p.time}${p.endTime ? `–${p.endTime}` : ""} — còn ${diff} phút!`);
+          playNotify();
+          if ("vibrate" in navigator) navigator.vibrate([80, 40, 80]);
+          setTimeout(() => setBubble(null), 9000);
         }
-        // 5 min before or past → URGENT fullscreen
-        if (diff <= 5 && diff >= -10) {
-          setUrgentAlert(p);
-        }
+        // Important tasks alert earlier
+        if (diff <= alertBefore && diff >= -10) setUrgentAlert(p);
       }
     };
     check();
@@ -2086,16 +2135,24 @@ function PetAssistant() {
   useEffect(() => {
     const t = setTimeout(() => {
       setShow(true);
-      // Priority: plans > reminders > greeting
-      const undonePlans = todayPlans.filter(p => !p.done);
-      if (undonePlans.length > 0) {
-        // Show plans as panel, not bubble — stays until dismissed
-        setBoard(true); setBoardTab("remind");
-      } else if (todayRem.length > 0) {
-        setBoard(true); setBoardTab("remind");
+      // Priority: real alerts > plans > reminders > greeting
+      const keyBase = formatDate(new Date());
+      if (nextAlert.length && !alertsDone.current) {
+        alertsDone.current = true;
+        setBubble(nextAlert[0].msg);
+        if (nextAlert[0].sound) {
+          playNotify();
+          // Rung nhẹ trên điện thoại hỗ trợ
+          if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
+        }
+        S.markSeenKey(nextAlert[0].msg.startsWith("⚠️") ? `expiry_${keyBase}` : nextAlert[0].msg.startsWith("💳") ? `renewal_${keyBase}` : nextAlert[0].msg.startsWith("Chi") ? `spend_${keyBase}` : `borrow_${keyBase}`);
+        setTimeout(() => setBubble(null), 7000);
+        if (nextAlert.length > 1) setTimeout(() => { setBubble(nextAlert[1].msg); setTimeout(() => setBubble(null), 7000); }, 7500);
       } else {
-        setBubble(PET_GREETINGS[Math.floor(Math.random() * PET_GREETINGS.length)]);
-        setTimeout(() => setBubble(null), 6000);
+        const undonePlans = todayPlans.filter(p => !p.done);
+        if (undonePlans.length > 0) { setBoard(true); setBoardTab("remind"); }
+        else if (todayRem.length > 0) { setBoard(true); setBoardTab("remind"); }
+        else { setBubble(PET_GREETINGS[Math.floor(Math.random() * PET_GREETINGS.length)]); setTimeout(() => setBubble(null), 6000); }
       }
     }, 600);
     return () => clearTimeout(t);
@@ -2114,10 +2171,19 @@ function PetAssistant() {
     if (todayExps.length === 0 && h >= 15) smart.push("Hôm nay chưa ghi chi tiêu? Check lại nha!");
     if (todayActs.length === 0 && h >= 18) smart.push("Tối rồi mà chưa track hoạt động nào luôn á!");
     if (todayCal > 2000) smart.push(`Hôm nay ăn ${todayCal} cal rồi đó, coi chừng nha!`);
-    if (todaySpent > 200000) smart.push(`Đã chi ${fmtCurrency(todaySpent)} hôm nay rồi đó!`);
+    if (todaySpent > 200000) smart.push(`Đã chi ${fmtCompact(todaySpent)} hôm nay rồi đó!`);
     if (streak.currentStreak >= 7) smart.push(`${streak.currentStreak} ngày streak! Quá đỉnh bạn ơi! 🔥`);
     if (streak.brokenAt) smart.push("Chuỗi đang gãy kìa! Hồi phục nhanh đi!");
     if (allRem.length > 0) smart.push(`Có ${allRem.length} nhắc nhở đang chờ. Giữ mình để xem!`);
+    const topIds = S.getTop3(today);
+    const topPlans = todayPlans.filter(p => topIds.includes(p.id) && !p.done);
+    if (topPlans.length > 0) smart.push(`Top ${topPlans.length} hôm nay: ${topPlans.map(p => p.title).join(", ")}. Tập trung nha!`);
+    const exSoon = S.getExpiringWithin(1);
+    if (exSoon.length > 0) smart.push(`${exSoon.map(x => x.name).join(", ")} sắp hết hạn, cần mua lại chưa?`);
+    const renewSoon = S.getRecurringDueWithin(2);
+    if (renewSoon.length > 0) smart.push(`${renewSoon.map(x => x.name).join(", ")} sắp tới ngày gia hạn.`);
+    const borrowed = S.getOverdueBorrows(30);
+    if (borrowed.length > 0) smart.push(`${borrowed[0].borrower} mượn ${borrowed[0].item} lâu rồi, cần lấy lại chưa?`);
 
     // Mix smart + random
     const pool = smart.length > 0 && Math.random() < 0.6 ? smart : PET_TALKS;
@@ -2149,7 +2215,7 @@ function PetAssistant() {
           <div className="text-6xl mb-4">⏰</div>
           <div className="text-white text-2xl font-bold text-center uppercase tracking-wider mb-2">SẮP TỚI GIỜ!</div>
           <div className="text-white/90 text-lg font-bold text-center mb-1">{urgentAlert.title}</div>
-          <div className="text-white/70 text-base tnum mb-1">{urgentAlert.time}</div>
+          <div className="text-white/70 text-base tnum mb-1">{urgentAlert.time}{urgentAlert.endTime ? ` → ${urgentAlert.endTime}` : ""}</div>
           {urgentAlert.detail && <div className="text-white/60 text-sm text-center mb-4">{urgentAlert.detail}</div>}
           <button onClick={() => { setDismissedPlans(p => new Set(p).add(urgentAlert.id)); setUrgentAlert(null); }}
             className="px-8 py-3 bg-white text-red rounded-xl font-bold text-base active:scale-95 min-h-[52px]">
@@ -2163,12 +2229,17 @@ function PetAssistant() {
         <div className="bg-card border border-line rounded-xl shadow-2xl a-pop w-[270px] max-h-[55vh] overflow-hidden flex flex-col">
           {/* Header */}
           <div className="px-2 py-1.5 border-b border-line flex items-center gap-1 shrink-0">
-            {[
-              { k: "remind" as const, l: `Nhắc (${allRem.length})` },
-              { k: "stats" as const, l: "Hôm nay" },
-              { k: "quick" as const, l: "Dán Gemini" },
-            ].map(t => (
-              <button key={t.k} onClick={() => setBoardTab(t.k)} className={`flex-1 py-1.5 rounded-md text-[9px] font-bold min-h-[32px] transition-all ${boardTab === t.k ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}>{t.l}</button>
+            {([
+              ["remind", P.alert, "Nhắc"],
+              ["top3", P.star, "Top3"],
+              ["expiry", P.leaf, "Hạn"],
+              ["renewal", P.repeat, "Gia hạn"],
+              ["checklist", P.check, "Đem đâu"],
+              ["holiday", P.calendar, "Lễ"],
+              ["others", P.box, "Khác"],
+              ["stats", P.chart, "Ngày"],
+            ] as const).map(([k, d, l]) => (
+              <button key={k} onClick={() => setBoardTab(k)} title={l} className={`flex-1 py-1.5 rounded-md flex items-center justify-center min-h-[34px] transition-all ${boardTab === k ? "bg-ink text-bg" : "text-mute hover:text-ink"}`}><Ic d={d} size={13}/></button>
             ))}
             <button onClick={() => setBoard(false)} className="min-w-[32px] min-h-[32px] flex items-center justify-center text-mute hover:text-ink shrink-0"><Ic d={P.x} size={13} /></button>
           </div>
@@ -2188,11 +2259,11 @@ function PetAssistant() {
                   {/* Today's plans */}
                   {undonePlans.length > 0 && (
                     <div className="px-3 py-2 border-b border-line bg-gold/5">
-                      <div className="text-[10px] font-bold text-gold mb-1">📋 Kế hoạch hôm nay ({undonePlans.length})</div>
+                      <div className="text-[10px] font-bold text-gold mb-1 flex items-center gap-1"><Ic d={P.clip} size={11} /> Kế hoạch hôm nay ({undonePlans.length})</div>
                       {undonePlans.map(p => (
                         <div key={p.id} className="text-[10px] py-0.5 flex items-center gap-1.5">
-                          {p.time && <span className="tnum text-gold font-bold w-10 shrink-0">{p.time}</span>}
-                          <span className="flex-1 text-ink">{p.title}</span>
+                          {p.time && <span className="tnum text-gold font-bold shrink-0">{p.time}{p.endTime ? `–${p.endTime}` : ""}</span>}
+                          <span className="flex-1 text-ink flex items-center gap-1">{(p.priority || 0) >= 2 ? <Ic d={P.alert} size={10} cls="text-red shrink-0"/> : (p.priority || 0) >= 1 ? <Ic d={P.alert} size={10} cls="text-gold shrink-0"/> : null}{p.title}</span>
                           {p.detail && <span className="text-mute text-[9px] truncate max-w-[60px]">{p.detail}</span>}
                         </div>
                       ))}
@@ -2202,7 +2273,7 @@ function PetAssistant() {
                   {/* Custom reminders */}
                   {allRem.length > 0 && (
                     <div className="border-b border-line">
-                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2">🔔 Nhắc nhở</div>
+                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2 flex items-center gap-1.5"><Ic d={P.alert} size={11} /> Nhắc nhở</div>
                       {allRem.map(r => {
                         const dl = Math.round((new Date(r.planDate + "T00:00:00").getTime() - Date.now()) / 86400000);
                         return (
@@ -2210,7 +2281,7 @@ function PetAssistant() {
                             <div className="flex items-start gap-2">
                               <div className="flex-1 min-w-0">
                                 <div className="text-[10px] font-bold">{r.planTitle}</div>
-                                <div className="text-[9px] text-mute tnum">{fmtDateDisp(r.planDate)}{r.planTime ? ` · ${r.planTime}` : ""}{dl > 0 ? ` · ${dl} ngày nữa` : " · HÔM NAY"}</div>
+                                <div className="text-[9px] text-mute tnum">{fmtDateDisp(r.planDate)}{r.planTime ? ` · ${r.planTime}${r.planEndTime ? `–${r.planEndTime}` : ""}` : ""}{dl > 0 ? ` · ${dl} ngày nữa` : " · HÔM NAY"}</div>
                               </div>
                               <button onClick={() => dismiss(r.id)} className="min-w-[28px] min-h-[28px] flex items-center justify-center text-mute hover:text-green rounded-md bg-bg2 border border-line"><Ic d={P.check} size={11} /></button>
                             </div>
@@ -2223,7 +2294,7 @@ function PetAssistant() {
                   {/* Future plans */}
                   {futureDates.length > 0 && (
                     <div className="border-b border-line">
-                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2">📅 Kế hoạch sắp tới</div>
+                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2 flex items-center gap-1.5"><Ic d={P.calendar} size={11} /> Kế hoạch sắp tới</div>
                       {futureDates.map(d => {
                         const plans = S.getPlans(d);
                         const dd = new Date(d + "T00:00:00");
@@ -2244,7 +2315,7 @@ function PetAssistant() {
                   {/* Future schedules */}
                   {futureSchedules.length > 0 && (
                     <div>
-                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2">⏰ TKB sắp tới</div>
+                      <div className="px-3 py-1 text-[9px] font-bold text-mute bg-bg2 flex items-center gap-1.5"><Ic d={P.clock} size={11} /> TKB sắp tới</div>
                       {futureSchedules.map(s => {
                         const dd = s.date ? new Date(s.date + "T00:00:00") : null;
                         return (
@@ -2291,11 +2362,11 @@ function PetAssistant() {
                       <div className="text-[8px] text-mute">Carbs</div>
                     </div>
                     <div className="bg-bg2 rounded-lg p-2 text-center border border-line">
-                      <div className="text-base font-bold tnum text-red">{todaySpent > 0 ? fmtCurrency(todaySpent) : "—"}</div>
+                      <div className="text-base font-bold tnum text-red whitespace-nowrap">{todaySpent > 0 ? fmtCompact(todaySpent) : "—"}</div>
                       <div className="text-[8px] text-mute">Chi tiêu</div>
                     </div>
                     <div className="bg-bg2 rounded-lg p-2 text-center border border-line">
-                      <div className="text-base font-bold tnum">{todayMeals.length}🍽 {todayActs.length}📋</div>
+                      <div className="text-base font-bold tnum flex items-center justify-center gap-1"><CI cat="eat" size={12} />{todayMeals.length} <Ic d={P.clip} size={11} />{todayActs.length}</div>
                       <div className="text-[8px] text-mute">Ăn · Việc</div>
                     </div>
                   </div>
@@ -2308,8 +2379,23 @@ function PetAssistant() {
               );
             })()}
 
-            {/* Tab: Dán Gemini */}
-            {boardTab === "quick" && <GeminiPasteTab onDone={() => { setBubble("Đã lưu dinh dưỡng!"); setTimeout(() => setBubble(null), 2000); setBoard(false); }} />}
+            {/* Tab: Hạn dùng */}
+            {boardTab === "expiry" && <ExpiryManager onChanged={petRefresh} />}
+
+            {/* Tab: Gia hạn */}
+            {boardTab === "renewal" && <RecurringManager onChanged={petRefresh} />}
+
+            {/* Tab: Checklist mang theo */}
+            {boardTab === "checklist" && <ChecklistManager onChanged={petRefresh} />}
+
+            {/* Tab: Lễ */}
+            {boardTab === "holiday" && <HolidaysManager onChanged={petRefresh} />}
+
+            {/* Tab: Khác */}
+            {boardTab === "others" && <OthersManager onChanged={petRefresh} />}
+
+            {/* Tab: Top 3 */}
+            {boardTab === "top3" && <Top3Manager onChanged={petRefresh} />}
           </div>
         </div>
       )}
@@ -2360,8 +2446,8 @@ function PetAssistant() {
           <path d="M28 48h8c0 3-1 5-4 5s-4-2-4-5z" fill="#252525"/>
         </svg>
         {/* Badge */}
-        {todayRem.length > 0 && (
-          <span className="absolute -top-1 -right-1 w-5 h-5 bg-red rounded-full flex items-center justify-center text-[8px] text-bg font-bold a-blink border-2 border-bg">{todayRem.length}</span>
+        {managerAlertCount > 0 && (
+          <span className="absolute -top-1 -right-1 w-5 h-5 bg-red rounded-full flex items-center justify-center text-[8px] text-bg font-bold a-blink border-2 border-bg">{Math.min(9, managerAlertCount)}</span>
         )}
       </div>
 
@@ -2384,9 +2470,9 @@ function HistModal({ onClose, onPick, onChanged }: { onClose: () => void; onPick
         <button key={d.date} onClick={() => onPick(d.date)} className="w-full flex items-center gap-2.5 py-2 px-2 rounded-lg hover:bg-bg2 text-left transition-colors group">
           <div className="w-10 h-10 bg-bg2 border border-line rounded-lg flex flex-col items-center justify-center shrink-0 group-hover:border-ink transition-colors"><span className="font-bold text-sm text-ink leading-none">{new Date(d.date + "T00:00:00").getDate()}</span><span className="text-[7px] text-mute font-semibold">{["CN","T2","T3","T4","T5","T6","T7"][new Date(d.date + "T00:00:00").getDay()]}</span></div>
           <div className="flex-1 min-w-0"><div className="text-xs font-semibold">{fmtDateDisp(d.date)}</div><div className="flex gap-1 mt-0.5 flex-wrap">
-            {d.mealsCount > 0 && <span className="text-[9px] bg-bg2 border border-line px-1 py-0.5 rounded text-mute">🍽{d.mealsCount}</span>}
-            {d.activitiesCount > 0 && <span className="text-[9px] bg-bg2 border border-line px-1 py-0.5 rounded text-mute">📋{d.activitiesCount}</span>}
-            {d.totalCalories > 0 && <span className="text-[9px] bg-bg2 border border-line px-1 py-0.5 rounded text-mute">🔥{d.totalCalories}</span>}
+            {d.mealsCount > 0 && <span className="text-[9px] bg-bg2 border border-line px-1 py-0.5 rounded text-mute flex items-center gap-0.5"><CI cat="eat" size={9} />{d.mealsCount}</span>}
+            {d.activitiesCount > 0 && <span className="text-[9px] bg-bg2 border border-line px-1 py-0.5 rounded text-mute flex items-center gap-0.5"><Ic d={P.clip} size={9} />{d.activitiesCount}</span>}
+            {d.totalCalories > 0 && <span className="text-[9px] bg-bg2 border border-line px-1 py-0.5 rounded text-mute flex items-center gap-0.5"><Ic d={P.flame} size={9} />{d.totalCalories}</span>}
           </div></div>
           {d.expensesTotal > 0 && <span className="text-[11px] text-red font-bold tnum shrink-0">{fmtCurrency(d.expensesTotal)}</span>}
           <Ic d={P.right} size={12} cls="text-mute2 group-hover:text-ink transition-colors shrink-0" />

@@ -422,6 +422,9 @@ export function exportAll(): string {
     debts: load<Debt>("t_debts"), streak: localStorage.getItem("t_streak_v3"),
     accounts: load<MoneyAccount>("t_accounts"), dreams: load<DreamItem>("t_dreams"),
     buyDecisions: load<BuyDecision>("t_buy_decisions"), planPresets: load<PlanPreset>("t_plan_presets"),
+    expiry: load<ExpiryItem>("t_expiry"), recurring: load<RecurringItem>("t_recurring"),
+    places: load<PlaceItem>("t_places"), borrows: load<BorrowItem>("t_borrows"), top3: load<Top3Day>("t_top3"),
+    checklists: load<Checklist>("t_checklists"), events: load<CustomEvent>("t_events"),
   }, null, 2);
 }
 
@@ -448,6 +451,13 @@ export function importAll(json: string): boolean {
     if (d.dreams) save("t_dreams", d.dreams);
     if (d.buyDecisions) save("t_buy_decisions", d.buyDecisions);
     if (d.planPresets) save("t_plan_presets", d.planPresets);
+    if (d.expiry) save("t_expiry", d.expiry);
+    if (d.recurring) save("t_recurring", d.recurring);
+    if (d.places) save("t_places", d.places);
+    if (d.borrows) save("t_borrows", d.borrows);
+    if (d.top3) save("t_top3", d.top3);
+    if (d.checklists) save("t_checklists", d.checklists);
+    if (d.events) save("t_events", d.events);
     return true;
   } catch { return false; }
 }
@@ -457,6 +467,7 @@ export interface PlanItem {
   id: string;
   date: string;
   time: string | null;
+  endTime?: string | null;
   title: string;
   detail: string | null;
   done: boolean;
@@ -508,7 +519,7 @@ export function copyPlans(fromDate: string, toDate: string) {
   const today = formatDate(new Date());
   if (toDate < today) return; // Can't copy to past
   const src = getPlans(fromDate);
-  src.forEach(p => addPlan({ date: toDate, time: p.time, title: p.title, detail: p.detail, category: p.category, priority: p.priority || 0, budget: p.budget, sourceId: p.id }));
+  src.forEach(p => addPlan({ date: toDate, time: p.time, endTime: p.endTime || null, title: p.title, detail: p.detail, category: p.category, priority: p.priority || 0, budget: p.budget, sourceId: p.id }));
 }
 // Get dates that have plans
 export function getPlanDates(): string[] {
@@ -521,6 +532,7 @@ export interface PlanPreset {
   title: string;
   detail: string | null;
   time: string | null;
+  endTime?: string | null;
   category: string;
   priority: number;
   budget: number | null;
@@ -537,7 +549,7 @@ export function deletePlanPreset(id: string): void { save("t_plan_presets", load
 export function applyPlanPreset(id: string, date: string): PlanItem | null {
   const p = getPlanPresets().find(x => x.id === id);
   if (!p || date < formatDate(new Date())) return null;
-  return addPlan({ date, time: p.time, title: p.title, detail: p.detail, category: p.category, priority: p.priority, budget: p.budget, sourceId: p.id });
+  return addPlan({ date, time: p.time, endTime: p.endTime || null, title: p.title, detail: p.detail, category: p.category, priority: p.priority, budget: p.budget, sourceId: p.id });
 }
 
 // ═══ SCHEDULE TEMPLATES — reusable time blocks per day ═══
@@ -581,7 +593,7 @@ export function applySchedule(scheduleId: string, date: string) {
   const s = getSchedules().find(x => x.id === scheduleId);
   if (!s) return;
   s.items.forEach(block => {
-    addPlan({ date, time: block.time, title: block.title, detail: block.endTime ? `${block.time}–${block.endTime}` : null, category: block.category, priority: 0, budget: null });
+    addPlan({ date, time: block.time, endTime: block.endTime || null, title: block.title, detail: null, category: block.category, priority: 0, budget: null });
   });
 }
 
@@ -659,6 +671,7 @@ export interface PlanReminder {
   planDate: string;
   planTitle: string;
   planTime: string | null;
+  planEndTime?: string | null;
   planDetail: string | null;
   remindAt: string; // ISO date string for when to remind
   color: string; // hex color
@@ -849,6 +862,172 @@ export interface Debt {
   interestRate: number | null; // lãi suất %/năm
   createdAt: string;
   paidHistory: { amount: number; date: string }[];
+}
+
+// ═══ EXPIRY ITEMS — hạn sử dụng đồ ăn/đồ dùng (key: t_expiry) ═══
+export interface ExpiryItem {
+  id: string; name: string; price: number; link: string | null;
+  boughtDate: string; expiryDays: number; createdAt: string;
+}
+export function getExpiryItems(): ExpiryItem[] { return load<ExpiryItem>("t_expiry"); }
+export function addExpiryItem(e: Omit<ExpiryItem, "id" | "createdAt">): ExpiryItem {
+  const all = load<ExpiryItem>("t_expiry"); const n = { ...e, id: uid(), createdAt: new Date().toISOString() };
+  all.push(n); save("t_expiry", all); return n;
+}
+export function deleteExpiryItem(id: string) { save("t_expiry", load<ExpiryItem>("t_expiry").filter(x => x.id !== id)); }
+export interface ExpiringItem extends ExpiryItem { expiryDate: string; daysLeft: number; }
+export function getExpiringWithin(days: number): ExpiringItem[] {
+  const today = new Date();
+  return getExpiryItems().map(x => {
+    const d = new Date(x.boughtDate + "T00:00:00"); d.setDate(d.getDate() + x.expiryDays);
+    return { ...x, expiryDate: formatDate(d), daysLeft: Math.round((d.getTime() - new Date(formatDate(today) + "T00:00:00").getTime()) / 86400000) };
+  }).filter(x => x.daysLeft <= days).sort((a, b) => a.daysLeft - b.daysLeft);
+}
+
+// ═══ RECURRING RENEWALS — gia hạn gói/bảo hiểm/xe/hóa đơn/việc định kỳ (key: t_recurring) ═══
+export interface RecurringItem {
+  id: string; name: string; kind: "subscription" | "insurance" | "vehicle" | "bill" | "chore" | "other";
+  amount: number; cycle: "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "custom";
+  cycleDays: number | null; // for custom
+  nextDate: string; note: string | null; link: string | null; createdAt: string;
+}
+export function getRecurring(): RecurringItem[] { return load<RecurringItem>("t_recurring"); }
+export function addRecurring(r: Omit<RecurringItem, "id" | "createdAt">): RecurringItem {
+  const all = load<RecurringItem>("t_recurring"); const n = { ...r, id: uid(), createdAt: new Date().toISOString() };
+  all.push(n); save("t_recurring", all); return n;
+}
+export function bumpRecurring(id: string) { // đánh dấu đã gia hạn → sang kỳ tiếp
+  const all = load<RecurringItem>("t_recurring"); const r = all.find(x => x.id === id);
+  if (!r) return;
+  const days = r.cycle === "daily" ? 1 : r.cycle === "weekly" ? 7 : r.cycle === "monthly" ? 30 : r.cycle === "quarterly" ? 90 : r.cycle === "yearly" ? 365 : (r.cycleDays || 30);
+  const d = new Date(r.nextDate + "T00:00:00"); d.setDate(d.getDate() + days); r.nextDate = formatDate(d);
+  save("t_recurring", all);
+}
+export function deleteRecurring(id: string) { save("t_recurring", load<RecurringItem>("t_recurring").filter(x => x.id !== id)); }
+export interface RecurringDue extends RecurringItem { daysLeft: number; }
+export function getRecurringDueWithin(days: number): RecurringDue[] {
+  const t = new Date(formatDate(new Date()) + "T00:00:00").getTime();
+  return getRecurring().map(r => ({ ...r, daysLeft: Math.round((new Date(r.nextDate + "T00:00:00").getTime() - t) / 86400000) }))
+    .filter(r => r.daysLeft <= days).sort((a, b) => a.daysLeft - b.daysLeft);
+}
+export function cycleLabel(r: RecurringItem): string {
+  return r.cycle === "daily" ? "hằng ngày" : r.cycle === "weekly" ? "hàng tuần" : r.cycle === "monthly" ? "hàng tháng" : r.cycle === "quarterly" ? "hàng quý" : r.cycle === "yearly" ? "hàng năm" : `${r.cycleDays || 30} ngày/lần`;
+}
+
+// ═══ PLACES — chỗ ăn/cafe hay (key: t_places) ═══
+export interface PlaceItem {
+  id: string; name: string; kind: "food" | "coffee" | "play" | "other";
+  note: string | null; link: string | null; address?: string | null;
+  bestFor?: string | null; priceRange?: string | null; rating?: number | null;
+  createdAt: string;
+}
+export function getPlaces(): PlaceItem[] { return load<PlaceItem>("t_places"); }
+export function addPlace(p: Omit<PlaceItem, "id" | "createdAt">): PlaceItem {
+  const all = load<PlaceItem>("t_places"); const n = { ...p, id: uid(), createdAt: new Date().toISOString() };
+  all.push(n); save("t_places", all); return n;
+}
+export function deletePlace(id: string) { save("t_places", load<PlaceItem>("t_places").filter(x => x.id !== id)); }
+export function suggestPlace(): PlaceItem | null {
+  const all = getPlaces(); return all.length ? all[Math.floor(Math.random() * all.length)] : null;
+}
+
+// ═══ BORROWS — đồ cho mượn (key: t_borrows) ═══
+export interface BorrowItem {
+  id: string; borrower: string; item: string; lentDate: string;
+  expectedReturn: string | null; returned: boolean; priority?: number;
+  note?: string | null; createdAt: string;
+}
+export function getBorrows(): BorrowItem[] { return load<BorrowItem>("t_borrows").filter(b => !b.returned); }
+export function addBorrow(b: Omit<BorrowItem, "id" | "createdAt" | "returned">): BorrowItem {
+  const all = load<BorrowItem>("t_borrows"); const n = { ...b, id: uid(), returned: false, createdAt: new Date().toISOString() };
+  all.push(n); save("t_borrows", all); return n;
+}
+export function markBorrowReturned(id: string) {
+  const all = load<BorrowItem>("t_borrows"); const b = all.find(x => x.id === id);
+  if (b) { b.returned = true; save("t_borrows", all); }
+}
+export function extendBorrow(id: string, newDate: string) {
+  const all = load<BorrowItem>("t_borrows"); const b = all.find(x => x.id === id);
+  if (b) { b.expectedReturn = newDate; save("t_borrows", all); }
+}
+export function deleteBorrow(id: string) { save("t_borrows", load<BorrowItem>("t_borrows").filter(x => x.id !== id)); }
+export function getOverdueBorrows(warnDays: number): (BorrowItem & { daysLent: number })[] {
+  const t = Date.now();
+  return getBorrows().map(b => ({ ...b, daysLent: Math.round((t - new Date(b.lentDate + "T00:00:00").getTime()) / 86400000) })).filter(b => b.daysLent >= warnDays);
+}
+
+// ═══ TOP 3 DAILY FOCUS (key: t_top3) ═══
+export interface Top3Day { date: string; planIds: string[]; createdAt: string; }
+export function getTop3(date: string): string[] {
+  return load<Top3Day>("t_top3").find(x => x.date === date)?.planIds || [];
+}
+export function setTop3(date: string, planIds: string[]) {
+  const all = load<Top3Day>("t_top3").filter(x => x.date !== date);
+  if (planIds.length) all.push({ date, planIds, createdAt: new Date().toISOString() });
+  save("t_top3", all);
+}
+
+// ═══ CHECKLISTS — mẫu đem đồ đi chơi/du lịch/học (key: t_checklists) ═══
+export interface ChecklistItem { id: string; name: string; checked: boolean; }
+export interface Checklist { id: string; name: string; icon: string; items: ChecklistItem[]; createdAt: string; }
+export function getChecklists(): Checklist[] { return load<Checklist>("t_checklists"); }
+export function addChecklist(c: Omit<Checklist, "id" | "createdAt">): Checklist {
+  const all = load<Checklist>("t_checklists"); const n = { ...c, id: uid(), createdAt: new Date().toISOString() };
+  all.push(n); save("t_checklists", all); return n;
+}
+export function toggleChecklistItem(clId: string, itemId: string) {
+  const all = load<Checklist>("t_checklists");
+  const cl = all.find(x => x.id === clId);
+  if (cl) { const it = cl.items.find(i => i.id === itemId); if (it) it.checked = !it.checked; }
+  save("t_checklists", all);
+}
+export function addChecklistItem(clId: string, name: string) {
+  const all = load<Checklist>("t_checklists");
+  const cl = all.find(x => x.id === clId);
+  if (cl) cl.items.push({ id: uid(), name, checked: false });
+  save("t_checklists", all);
+}
+export function deleteChecklistItem(clId: string, itemId: string) {
+  const all = load<Checklist>("t_checklists");
+  const cl = all.find(x => x.id === clId);
+  if (cl) cl.items = cl.items.filter(i => i.id !== itemId);
+  save("t_checklists", all);
+}
+export function resetChecklist(clId: string) { // dùng lại lần đi sau
+  const all = load<Checklist>("t_checklists");
+  const cl = all.find(x => x.id === clId);
+  if (cl) cl.items.forEach(i => { i.checked = false; });
+  save("t_checklists", all);
+}
+export function deleteChecklist(clId: string) { save("t_checklists", load<Checklist>("t_checklists").filter(x => x.id !== clId)); }
+
+// ═══ CUSTOM EVENTS — sự kiện cá nhân cần đếm ngược (key: t_events) ═══
+export interface CustomEvent { id: string; name: string; date: string; note: string | null; createdAt: string; }
+export function getCustomEvents(): CustomEvent[] { return load<CustomEvent>("t_events"); }
+export function addCustomEvent(e: Omit<CustomEvent, "id" | "createdAt">): CustomEvent {
+  const all = load<CustomEvent>("t_events"); const n = { ...e, id: uid(), createdAt: new Date().toISOString() };
+  all.push(n); save("t_events", all); return n;
+}
+export function deleteCustomEvent(id: string) { save("t_events", load<CustomEvent>("t_events").filter(x => x.id !== id)); }
+
+// ═══ PET ALERT SEEN (key: t_pet_seen) — ghi nhận lần nhắc cuối theo loại/ngày ═══
+export function getSeenKey(key: string): boolean { return !!localStorage.getItem(`t_pet_seen_${key}`); }
+export function markSeenKey(key: string) { localStorage.setItem(`t_pet_seen_${key}`, new Date().toISOString()); }
+
+// ═══ AB NORMAL SPEND CHECK ═══
+export function getSpendAnomaly(): { today: number; avg: number; ratio: number } | null {
+  const today = formatDate(new Date());
+  const todaySpent = getExpenses(today).reduce((s, e) => s + e.amount, 0);
+  if (todaySpent === 0) return null;
+  let total = 0, days = 0;
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const sum = getExpenses(formatDate(d)).reduce((s, e) => s + e.amount, 0);
+    if (sum > 0) { total += sum; days++; }
+  }
+  if (days === 0) return null;
+  const avg = total / days;
+  return avg > 0 ? { today: todaySpent, avg, ratio: todaySpent / avg } : null;
 }
 
 export function getDebts(): Debt[] {
