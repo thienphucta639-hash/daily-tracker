@@ -39,6 +39,9 @@ export interface Expense {
   description: string;
   amount: number;
   image: string | null;
+  paymentMethod?: "cash" | "account" | null;
+  accountId?: string | null;
+  mealId?: string | null;
   createdAt: string;
 }
 
@@ -162,6 +165,7 @@ export function addExpense(e: Omit<Expense, "id" | "createdAt">): Expense {
   const forStorage = { ...n, image: n.image ? `idb:img_${id}` : null };
   all.push(forStorage);
   save("t_exps", all);
+  if (n.accountId) adjustMoneyAccount(n.accountId, -n.amount);
   return n;
 }
 export async function saveExpenseImage(expId: string, base64: string): Promise<void> {
@@ -169,7 +173,10 @@ export async function saveExpenseImage(expId: string, base64: string): Promise<v
   await saveImage(`img_${expId}`, base64);
 }
 export function deleteExpense(id: string) {
-  save("t_exps", load<Expense>("t_exps").filter(e => e.id !== id));
+  const all = load<Expense>("t_exps");
+  const target = all.find(e => e.id === id);
+  if (target?.accountId) adjustMoneyAccount(target.accountId, target.amount);
+  save("t_exps", all.filter(e => e.id !== id));
   import("./imgdb").then(db => db.deleteImage(`img_${id}`)).catch(() => {});
 }
 
@@ -414,7 +421,7 @@ export function exportAll(): string {
     mealPresets: load<MealPreset>("t_meal_presets"), expPresets: load<ExpensePreset>("t_exp_presets"),
     debts: load<Debt>("t_debts"), streak: localStorage.getItem("t_streak_v3"),
     accounts: load<MoneyAccount>("t_accounts"), dreams: load<DreamItem>("t_dreams"),
-    buyDecisions: load<BuyDecision>("t_buy_decisions"),
+    buyDecisions: load<BuyDecision>("t_buy_decisions"), planPresets: load<PlanPreset>("t_plan_presets"),
   }, null, 2);
 }
 
@@ -440,6 +447,7 @@ export function importAll(json: string): boolean {
     if (d.accounts) save("t_accounts", d.accounts);
     if (d.dreams) save("t_dreams", d.dreams);
     if (d.buyDecisions) save("t_buy_decisions", d.buyDecisions);
+    if (d.planPresets) save("t_plan_presets", d.planPresets);
     return true;
   } catch { return false; }
 }
@@ -505,6 +513,31 @@ export function copyPlans(fromDate: string, toDate: string) {
 // Get dates that have plans
 export function getPlanDates(): string[] {
   return Array.from(new Set(load<PlanItem>("t_plans").map(p => p.date))).sort().reverse();
+}
+
+// ═══ USER PLAN PRESETS — quick plans created by user (key: t_plan_presets) ═══
+export interface PlanPreset {
+  id: string;
+  title: string;
+  detail: string | null;
+  time: string | null;
+  category: string;
+  priority: number;
+  budget: number | null;
+}
+export function getPlanPresets(): PlanPreset[] { return load<PlanPreset>("t_plan_presets"); }
+export function addPlanPreset(p: Omit<PlanPreset, "id">): PlanPreset {
+  const all = load<PlanPreset>("t_plan_presets");
+  const found = all.find(x => x.title.toLowerCase() === p.title.toLowerCase());
+  if (found) { Object.assign(found, p); save("t_plan_presets", all); return found; }
+  const n: PlanPreset = { ...p, id: uid() };
+  all.push(n); save("t_plan_presets", all); return n;
+}
+export function deletePlanPreset(id: string): void { save("t_plan_presets", load<PlanPreset>("t_plan_presets").filter(p => p.id !== id)); }
+export function applyPlanPreset(id: string, date: string): PlanItem | null {
+  const p = getPlanPresets().find(x => x.id === id);
+  if (!p || date < formatDate(new Date())) return null;
+  return addPlan({ date, time: p.time, title: p.title, detail: p.detail, category: p.category, priority: p.priority, budget: p.budget, sourceId: p.id });
 }
 
 // ═══ SCHEDULE TEMPLATES — reusable time blocks per day ═══
@@ -836,7 +869,10 @@ export function payDebt(id: string, amount: number): void {
   if (!d) return;
   d.paidAmount += amount;
   d.paidHistory.push({ amount, date: new Date().toISOString() });
-  if (d.paidAmount >= d.totalAmount) d.paidAmount = d.totalAmount;
+  if (d.paidAmount >= d.totalAmount) {
+    save("t_debts", all.filter(x => x.id !== id));
+    return;
+  }
   save("t_debts", all);
 }
 export function updateDebt(id: string, updates: Partial<Debt>): void {

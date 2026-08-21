@@ -50,7 +50,7 @@ export default function App() {
   const [liveR, setLiveR] = useState<S.LiveTrack[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [modal, setModal] = useState<string | null>(null);
-  const [col, setCol] = useState<Record<string, boolean>>({});
+  const [col, setCol] = useState<Record<string, boolean>>({ me: true, e: true });
   const [img, setImg] = useState<string | null>(null);
   const [streak, setStreak] = useState(0);
   const [streakBroken, setStreakBroken] = useState<string | null>(null);
@@ -225,7 +225,7 @@ export default function App() {
       // Find matching auto-created expense and delete it too
       const meal = meals.find(m => m.id === id);
       if (meal?.price && meal.price > 0) {
-        const matchExp = exps.find(e => e.category === "food" && e.description === meal.foodName && e.amount === meal.price);
+        const matchExp = exps.find(e => e.mealId === meal.id) || exps.find(e => !e.mealId && e.category === "food" && e.description === meal.foodName && e.amount === meal.price);
         if (matchExp) S.deleteExpense(matchExp.id);
       }
       S.deleteMeal(id);
@@ -841,50 +841,16 @@ function playAlarm() {
   } catch {}
 }
 
-/* ═══ RECENT LOG — compact, click to expand ═══ */
+/* ═══ RECENT LOG — full names, compact 3 days ═══ */
 function RecentLog({ currentDate }: { currentDate: string }) {
-  const [openDay, setOpenDay] = useState<string | null>(null);
-  const logs = S.getRecentDayLogs(7);
+  const logs = S.getRecentDayLogs(3);
   const allDays = logs.filter(l => l.meals.length > 0 || l.activities.length > 0 || l.expenses.length > 0 || l.liveTracks.length > 0);
   if (allDays.length <= 1) return null;
   const dayNames = ["CN","T2","T3","T4","T5","T6","T7"];
-
-  return (
-    <div className="bg-card rounded-lg border border-line overflow-hidden a-rise">
-      <div className="px-2.5 py-1.5 border-b border-line flex items-center justify-between">
-        <span className="font-bold text-[11px]">Nhật ký</span>
-        <span className="text-[9px] text-mute tnum">{allDays.length} ngày</span>
-      </div>
-      {allDays.map(day => {
-        const cur = day.date === currentDate;
-        const exp = day.expenses.reduce((s, e) => s + e.amount, 0);
-        const dd = new Date(day.date + "T00:00:00");
-        const isOpen = openDay === day.date;
-        return (
-          <div key={day.date} className={`border-b border-line/30 last:border-0 ${cur ? "bg-ink/5" : ""}`}>
-            <button onClick={() => setOpenDay(isOpen ? null : day.date)} className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left min-h-[36px]">
-              <span className={`text-[10px] font-bold tnum shrink-0 ${cur ? "text-ink" : "text-mute"}`}>{dayNames[dd.getDay()]} {dd.getDate()}/{dd.getMonth()+1}</span>
-              <span className="flex-1 flex gap-1 text-[9px] text-mute overflow-hidden">
-                {day.meals.length > 0 && <span className="shrink-0">🍽{day.meals.length}</span>}
-                {day.activities.length > 0 && <span className="shrink-0">📋{day.activities.length}</span>}
-                {day.liveTracks.length > 0 && <span className="shrink-0">⏱{day.liveTracks.length}</span>}
-              </span>
-              {exp > 0 && <span className="text-[9px] text-red font-bold tnum shrink-0">{fmtCurrency(exp)}</span>}
-              <Ic d={P.down} size={9} cls={`text-mute2 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} />
-            </button>
-            {isOpen && (
-              <div className="px-2.5 pb-1.5 space-y-0.5">
-                {day.liveTracks.map(t => <div key={t.id} className="text-[9px] text-mute pl-8">⏱ {t.title}</div>)}
-                {day.meals.map(m => <div key={m.id} className="text-[9px] text-mute pl-8">🍽 {m.foodName}{m.price ? ` · ${fmtCurrency(m.price)}` : ""}</div>)}
-                {day.activities.map(a => <div key={a.id} className="text-[9px] text-mute pl-8">{ACTS.find(x => x.value === a.category)?.emoji || "📋"} {a.title}</div>)}
-                {day.expenses.filter(e => !day.meals.some(m => m.foodName === e.description && m.price === e.amount)).map(e => <div key={e.id} className="text-[9px] text-mute pl-8">{EXPS.find(x => x.value === e.category)?.emoji || "💰"} {e.description} · {fmtCurrency(e.amount)}</div>)}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+  return <div className="bg-card rounded-lg border border-line overflow-hidden a-rise">
+    <div className="px-2.5 py-1.5 border-b border-line flex justify-between"><span className="font-bold text-[11px]">Nhật ký gần đây</span><span className="text-[9px] text-mute">3 ngày gần nhất</span></div>
+    {allDays.map(day=>{const dd=new Date(day.date+"T00:00:00"),exp=day.expenses.reduce((s,e)=>s+e.amount,0),cur=day.date===currentDate;const acts=[...day.liveTracks.map(t=>t.title),...day.activities.map(a=>a.title)];const extras=day.expenses.filter(e=>!day.meals.some(m=>m.foodName===e.description&&m.price===e.amount));return <div key={day.date} className={`px-2.5 py-1.5 border-b border-line/30 last:border-0 ${cur?"bg-ink/5":""}`}><div className="flex items-center gap-2 mb-0.5"><span className={`text-[10px] font-bold tnum ${cur?"text-ink":"text-mute"}`}>{dayNames[dd.getDay()]} {dd.getDate()}/{dd.getMonth()+1}</span><span className="flex-1 h-px bg-line"/>{exp>0&&<span className="text-[9px] text-red font-bold tnum">{fmtCurrency(exp)}</span>}</div>{acts.length>0&&<div className="text-[9px] text-ink leading-relaxed"><b>Hoạt động:</b> {acts.join(" · ")}</div>}{day.meals.length>0&&<div className="text-[9px] text-mute leading-relaxed"><b>Ăn:</b> {day.meals.map(m=>m.foodName).join(" · ")}</div>}{extras.length>0&&<div className="text-[9px] text-mute leading-relaxed"><b>Chi:</b> {extras.map(e=>`${e.description} ${fmtCurrency(e.amount)}`).join(" · ")}</div>}</div>})}
+  </div>;
 }
 
 function DayNote({ status, date, onSave }: { status: S.DailyStatus | null; date: string; onSave: () => void }) {
@@ -1015,6 +981,17 @@ function MoneyIn({ value, onChange, placeholder }: { value: string; onChange: (v
     {value.trim() && <p className={`text-[10px] mt-0.5 text-right font-semibold ${p != null ? "text-green" : "text-red"}`}>{p != null ? `= ${fmtCurrency(p)}` : "Lỗi"}</p>}</div>);
 }
 
+function PaymentPicker({ method, setMethod, accountId, setAccountId }: { method: "cash" | "account"; setMethod: (m: "cash" | "account") => void; accountId: string; setAccountId: (id: string) => void }) {
+  const all = S.getMoneyAccounts();
+  const choices = all.filter(a => method === "cash" ? a.type === "cash" : a.type !== "cash");
+  const selectMethod = (m: "cash" | "account") => { setMethod(m); const list = all.filter(a => m === "cash" ? a.type === "cash" : a.type !== "cash"); setAccountId(list[0]?.id || ""); };
+  return <div className="bg-bg2 border border-line rounded-lg p-2 mb-2">
+    <div className="text-[9px] text-mute font-bold mb-1">Thanh toán bằng</div>
+    <div className="grid grid-cols-2 gap-1 mb-1.5"><button type="button" onClick={() => selectMethod("cash")} className={`min-h-[38px] rounded-md text-[10px] font-bold ${method === "cash" ? "bg-ink text-bg" : "bg-card border border-line text-mute"}`}>Tiền mặt</button><button type="button" onClick={() => selectMethod("account")} className={`min-h-[38px] rounded-md text-[10px] font-bold ${method === "account" ? "bg-ink text-bg" : "bg-card border border-line text-mute"}`}>Tài khoản</button></div>
+    {choices.length === 0 ? <div className="text-[9px] text-gold">Chưa có {method === "cash" ? "quỹ tiền mặt" : "tài khoản"}; khoản chi vẫn lưu nhưng chưa trừ số dư.</div> : <div className="grid grid-cols-2 gap-1">{choices.map(a => <button type="button" key={a.id} onClick={() => setAccountId(a.id)} className={`min-h-[36px] px-2 rounded-md text-left ${accountId === a.id ? "bg-green2 border border-green/30 text-green" : "bg-card border border-line text-mute"}`}><div className="text-[9px] font-bold truncate">{a.name}</div><div className="text-[8px] tnum">{fmtCurrency(a.balance)}</div></button>)}</div>}
+  </div>;
+}
+
 async function compressImage(file: File): Promise<string> {
   const raw = await new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -1082,9 +1059,14 @@ function ImgP({ value, onChange }: { value: string | null; onChange: (v: string 
 }
 
 function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
-  const [step, setStep] = useState(1); // 1=basic, 2=nutrition
+  const accounts = S.getMoneyAccounts();
+  const initialCash = accounts.find(a => a.type === "cash");
+  const initialAccount = accounts.find(a => a.type !== "cash");
+  const [step, setStep] = useState(1);
   const [mt, setMt] = useState(autoMealType()); const [fn, setFn] = useState(""); const [cal, setCal] = useState(""); const [tm, setTm] = useState(nowHHMM()); const [price, setPrice] = useState(""); const [im, setIm] = useState<string | null>(null);
   const [pro, setPro] = useState(""); const [fat, setFat] = useState(""); const [carb, setCarb] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "account">(initialCash ? "cash" : "account");
+  const [accountId, setAccountId] = useState(initialCash?.id || initialAccount?.id || "");
   const pp = parseMoney(price);
 
   const doSave = async () => {
@@ -1092,7 +1074,7 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
     try {
       const meal = S.addMeal({ date, mealType: mt, foodName: fn.trim(), calories: cal ? parseInt(cal) : null, protein: pro ? parseInt(pro) : null, fat: fat ? parseInt(fat) : null, carbs: carb ? parseInt(carb) : null, time: tm || nowHHMM(), notes: null, image: im, price: pp });
       if (im) await saveImage(`img_${meal.id}`, im);
-      if (pp != null && pp > 0) S.addExpense({ date, category: "food", description: fn.trim(), amount: pp, image: null });
+      if (pp != null && pp > 0) S.addExpense({ date, category: "food", description: fn.trim(), amount: pp, image: null, paymentMethod, accountId: accountId || null, mealId: meal.id });
       onDone();
     } catch { alert("Lỗi lưu."); }
   };
@@ -1102,14 +1084,15 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
       {/* Saved meals — one tap creates a separate meal */}
       {S.getMealPresets().length > 0 && (
         <div className="mb-2">
+          {S.getMealPresets().some(p => (p.price || 0) > 0) && <PaymentPicker method={paymentMethod} setMethod={setPaymentMethod} accountId={accountId} setAccountId={setAccountId} />}
           <div className="text-[9px] text-mute font-bold mb-1">Món đã lưu — bấm để thêm ngay:</div>
           <div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">
             {S.getMealPresets().map(p => (
               <div key={p.id} className="relative">
                 <button type="button" onClick={() => {
                   const mealType = p.mealType || autoMealType();
-                  S.addMeal({ date, mealType, foodName: p.name, calories: p.calories || null, protein: p.protein || null, fat: p.fat || null, carbs: p.carbs || null, notes: null, time: nowHHMM(), image: null, price: p.price || null });
-                  if (p.price && p.price > 0) S.addExpense({ date, category: "food", description: p.name, amount: p.price, image: null });
+                  const meal = S.addMeal({ date, mealType, foodName: p.name, calories: p.calories || null, protein: p.protein || null, fat: p.fat || null, carbs: p.carbs || null, notes: null, time: nowHHMM(), image: null, price: p.price || null });
+                  if (p.price && p.price > 0) S.addExpense({ date, category: "food", description: p.name, amount: p.price, image: null, paymentMethod, accountId: accountId || null, mealId: meal.id });
                   onDone();
                 }} className="w-full text-left px-2 py-2 bg-bg2 border border-line rounded-lg min-h-[48px] active:scale-95 hover:border-ink">
                   <div className="text-[10px] font-bold pr-4 truncate">{p.name}</div>
@@ -1202,6 +1185,7 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
         </button>
       )}
       <div className="mb-2.5"><MoneyIn value={price} onChange={setPrice} placeholder="Giá tiền" /></div>
+      {pp != null && pp > 0 && <PaymentPicker method={paymentMethod} setMethod={setPaymentMethod} accountId={accountId} setAccountId={setAccountId} />}
       {pp != null && pp > 0 && <div className="flex items-center gap-1 bg-gold2 text-gold border border-gold/20 rounded-md px-2 py-1 text-[10px] font-medium mb-2 a-pop"><Ic d={P.wallet} size={11} /> Vào chi tiêu</div>}
       <div className="flex gap-2">
         <button onClick={() => setStep(1)} className="py-2.5 px-4 rounded-lg bg-bg2 border border-line text-mute font-bold active:scale-[0.98] min-h-[48px]">← Quay lại</button>
@@ -1222,7 +1206,12 @@ function ActModal({ date, onDone, onClose }: { date: string; onDone: () => void;
 }
 
 function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void; onClose: () => void }) {
+  const accounts = S.getMoneyAccounts();
+  const initialCash = accounts.find(a => a.type === "cash");
+  const initialAccount = accounts.find(a => a.type !== "cash");
   const [cat, setCat] = useState("food"); const [ds, setDs] = useState(""); const [am, setAm] = useState(""); const [im, setIm] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "account">(initialCash ? "cash" : "account");
+  const [accountId, setAccountId] = useState(initialCash?.id || initialAccount?.id || "");
   const p = parseMoney(am);
   const expPresets = S.getExpensePresets();
   return (<Wrap title="Thêm chi tiêu" onClose={onClose}>
@@ -1244,6 +1233,7 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
     <ImgP value={im} onChange={setIm} />
     <input type="text" value={ds} onChange={e => setDs(e.target.value)} placeholder="Mô tả" autoFocus className={`${ic} mb-2`} />
     <div className="mb-2"><MoneyIn value={am} onChange={setAm} placeholder="Số tiền" /></div>
+    {p != null && p > 0 && <PaymentPicker method={paymentMethod} setMethod={setPaymentMethod} accountId={accountId} setAccountId={setAccountId} />}
     {/* Save as preset */}
     {ds.trim() && p != null && p > 0 && (
       <button type="button" onClick={() => { S.addExpensePreset({ description: ds.trim(), amount: p, category: cat }); alert("Đã lưu mẫu!"); }}
@@ -1254,7 +1244,7 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
     <button onClick={async () => {
       if (!ds.trim() || p == null || p <= 0) return;
       try {
-        const exp = S.addExpense({ date, category: cat, description: ds.trim(), amount: p, image: im });
+        const exp = S.addExpense({ date, category: cat, description: ds.trim(), amount: p, image: im, paymentMethod, accountId: accountId || null, mealId: null });
         if (im) await saveImage(`img_${exp.id}`, im);
         onDone();
       } catch { alert("Lỗi lưu."); }
@@ -1265,6 +1255,7 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
 /* ═══ DEBT SECTION ═══ */
 function DebtSection({ onChanged }: { onChanged: () => void }) {
   const [modal, setModal] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const debts = S.getDebts();
   const total = debts.reduce((s, d) => s + Math.max(0, d.totalAmount - d.paidAmount), 0);
 
@@ -1278,19 +1269,23 @@ function DebtSection({ onChanged }: { onChanged: () => void }) {
   return (
     <div className="bg-card rounded-lg border border-line overflow-hidden">
       <div className="flex items-center px-2.5 py-2 gap-2 border-b border-line">
-        <span className="w-6 h-6 rounded-md bg-red2 border border-red/20 flex items-center justify-center text-red shrink-0"><Ic d={P.wallet} size={12} /></span>
-        <span className="font-bold text-xs flex-1">Quản lý nợ</span>
-        <button onClick={() => setModal("add")} className="w-7 h-7 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90 shrink-0"><Ic d={P.plus} size={13} sw={2.5} /></button>
+        <button onClick={() => setOpen(!open)} className="flex items-center gap-2 flex-1 text-left min-h-[36px]">
+          <span className="w-6 h-6 rounded-md bg-red2 border border-red/20 flex items-center justify-center text-red shrink-0"><Ic d={P.wallet} size={12} /></span>
+          <span className="font-bold text-xs">Quản lý nợ</span>
+          {total > 0 && <span className="ml-auto text-[10px] text-red font-bold tnum">{fmtCurrency(total)}</span>}
+          <Ic d={P.down} size={10} cls={`text-mute2 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        <button onClick={() => setModal("add")} className="w-8 h-8 rounded-md bg-ink text-bg flex items-center justify-center active:scale-90 shrink-0"><Ic d={P.plus} size={13} sw={2.5} /></button>
       </div>
 
-      {debts.length > 0 && (
+      {open && debts.length > 0 && (
         <div className="px-2.5 py-2 bg-red/5 border-b border-line flex items-center justify-between">
           <span className="text-[10px] text-mute font-bold">TỔNG CÒN NỢ</span>
           <span className="font-bold text-base text-red tnum">{fmtCurrency(total)}</span>
         </div>
       )}
 
-      {debts.length === 0 ? (
+      {open && (debts.length === 0 ? (
         <div className="px-3 py-3 text-center text-mute text-[10px]">Chưa có khoản nợ. Thêm để theo dõi.</div>
       ) : debts.map(d => {
         const remaining = Math.max(0, d.totalAmount - d.paidAmount);
@@ -1323,7 +1318,7 @@ function DebtSection({ onChanged }: { onChanged: () => void }) {
             </div>
           </div>
         );
-      })}
+      }))}
 
       {modal === "add" && <AddDebtModal onDone={() => { onChanged(); setModal(null); }} onClose={() => setModal(null)} />}
     </div>
@@ -1635,17 +1630,6 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
   const [remindColor, setRemindColor] = useState("#ffa502");
   const [remindNote, setRemindNote] = useState("");
 
-  const quickPlans = [
-    { t: "Ăn sáng", c: "eat", time: "07:00" },
-    { t: "Ăn trưa", c: "eat", time: "12:00" },
-    { t: "Ăn tối", c: "eat", time: "18:00" },
-    { t: "Tập gym", c: "exercise", time: "10:00" },
-    { t: "Làm việc", c: "work", time: "08:00" },
-    { t: "Học bài", c: "study", time: "20:00" },
-    { t: "Đi chợ", c: "chores", time: "20:00" },
-    { t: "Nghỉ ngơi", c: "rest", time: "22:00" },
-  ];
-
   const doSave = () => {
     if (!title.trim()) return;
     const plan = S.addPlan({ date, time: time || null, title: title.trim(), detail: detail.trim() || null, category: cat, priority, budget: budgetParsed });
@@ -1655,16 +1639,11 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
 
   return (<Wrap title={step === 1 ? `Kế hoạch · ${fmtDateDisp(date)}` : "Chi tiết & nhắc nhở"} onClose={onClose}>
     {step === 1 ? (<>
-      {/* Step 1: Quick add + basic info */}
-      <div className="grid grid-cols-4 gap-1.5 mb-2.5">
-        {quickPlans.map(q => (
-          <button type="button" key={q.t} onClick={() => { S.addPlan({ date, time: q.time, title: q.t, detail: null, category: q.c, priority: 0, budget: null }); onDone(); }}
-            className="flex flex-col items-center gap-0.5 py-2 bg-bg2 border border-line rounded-lg text-[9px] font-bold min-h-[48px] active:scale-95 hover:border-ink transition-all">
-            <CI cat={q.c} size={16} /><span>{q.t}</span><span className="text-[8px] text-mute font-normal tnum">{q.time}</span>
-          </button>
-        ))}
-      </div>
-      <div className="grid grid-cols-5 gap-1 mb-2">{ACTS.map(c => (<button type="button" key={c.value} onClick={() => setCat(c.value)} className={`flex flex-col items-center py-1.5 rounded-md text-[8px] font-bold min-h-[40px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={13} />{c.label}</button>))}</div>
+      {/* User-created quick plans */}
+      {S.getPlanPresets().length > 0 && <div className="mb-2.5"><div className="text-[9px] text-mute font-bold mb-1">Mẫu kế hoạch của tôi:</div><div className="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">{S.getPlanPresets().map(p=><div key={p.id} className="relative"><button type="button" onClick={()=>{S.applyPlanPreset(p.id,date);onDone();}} className="w-full min-h-[48px] text-left bg-bg2 border border-line rounded-lg px-2 py-1.5 active:scale-95"><div className="flex items-center gap-1"><CI cat={p.category} size={12}/><span className="text-[10px] font-bold truncate">{p.title}</span></div><div className="text-[8px] text-mute tnum">{p.time||"Không giờ"}{p.detail?` · ${p.detail}`:""}</div></button><button type="button" onClick={()=>{if(confirm("Xóa mẫu?"))S.deletePlanPreset(p.id);}} className="absolute top-1 right-1 w-6 h-6 flex items-center justify-center text-mute hover:text-red"><Ic d={P.x} size={9}/></button></div>)}</div></div>}
+      {/* Step 1: user-defined plan only */}
+      <div className="text-[9px] text-mute font-bold mb-1">Chọn loại kế hoạch (tối đa 8 icon):</div>
+      <div className="grid grid-cols-4 gap-1.5 mb-2.5">{ACTS.slice(0, 8).map(c => (<button type="button" key={c.value} onClick={() => setCat(c.value)} className={`flex flex-col items-center justify-center py-2 rounded-lg text-[8px] font-bold min-h-[48px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={15} />{c.label}</button>))}</div>
       <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề" autoFocus className={`${ic} mb-2`} />
       <input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} mb-2 min-h-[44px]`} />
       <div className="flex gap-2">
@@ -1714,6 +1693,7 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
           </div>
         );
       })()}
+      <button type="button" onClick={()=>{S.addPlanPreset({title:title.trim(),detail:detail.trim()||null,time:time||null,category:cat,priority,budget:budgetParsed});alert("Đã lưu mẫu kế hoạch!");}} className="w-full min-h-[38px] mb-1.5 bg-green2 border border-green/20 text-green rounded-lg text-[9px] font-bold">Lưu làm mẫu thêm nhanh</button>
       <div className="flex gap-2">
         <button type="button" onClick={() => setStep(1)} className="py-2.5 px-4 rounded-lg bg-bg2 border border-line text-mute font-bold active:scale-[0.98] min-h-[48px]">←</button>
         <button type="button" onClick={doSave} className="flex-1 py-2.5 rounded-lg bg-ink text-bg font-bold active:scale-[0.98] min-h-[48px]">Thêm kế hoạch</button>
@@ -1914,9 +1894,9 @@ function PlanList({ plans, date, onChanged, onAdd }: { plans: S.PlanItem[]; date
                     {priorityBadge(p.priority || 0)}
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-mute flex-wrap">
+                    <CI cat={p.category} size={12} />
                     {p.time && <span className="tnum">{p.time}</span>}
                     {p.detail && <span className="truncate max-w-[150px]">{p.detail}</span>}
-                    <span>{ACTS.find(x => x.value === p.category)?.emoji}</span>
                     {p.budget != null && p.budget > 0 && <span className="bg-red2 text-red border border-red/20 px-1 py-0.5 rounded font-semibold tnum">{fmtCurrency(p.budget)}</span>}
                   </div>
                   {/* Result note */}
@@ -2024,13 +2004,13 @@ function GeminiPasteTab({ onDone }: { onDone: () => void }) {
 
 /* ═══ PET ASSISTANT ═══ */
 const PET_GREETINGS = [
-  "Ê bro! Quay lại rồi hả? Let's go track ngày hôm nay nào! 🔥",
-  "Yo yo! Chill thôi, mở app lên là tui biết bạn nghiêm túc rồi đó! 💪",
-  "Chào bạn yêu! Hôm nay mình sẽ track mọi thứ ngon lành nha! ✨",
-  "Ê ê! Welcome back! Chuỗi streak của bạn đang đẹp lắm á! 🔥",
-  "Hế lô! Tui ở đây chờ bạn nè. Track đi rồi flex! 💯",
-  "Bạn ơi quay lại rồi! Tui nhớ bạn ghê. Nào track thôi! 🐾",
-  "Yooo! Ngày mới tràn đầy năng lượng! Bắt đầu track nào! ⚡",
+  "Chào bạn! Mình sẵn sàng ghi lại ngày hôm nay cùng bạn.",
+  "Hôm nay bắt đầu từ việc nhỏ nhất nhé. Bạn đang làm gì?",
+  "Mình ở đây để nhắc và tổng hợp, bạn chỉ cần ghi đúng những gì đã làm.",
+  "Chào ngày mới! Khi ăn, làm việc hoặc chi tiền thì nhớ mở Jay Tracker nhé.",
+  "Không cần hoàn hảo đâu, cứ ghi lại từng hoạt động thật là được.",
+  "Bạn muốn bắt đầu bằng bữa ăn, hoạt động hay kế hoạch hôm nay?",
+  "Jay Tracker đã sẵn sàng. Cùng theo dõi ngày hôm nay thật rõ ràng nhé.",
 ];
 const PET_REMIND_INTROS = [
   "Ê ê! Bạn có mấy cái nhắc nhở nè, đừng quên nha!",
@@ -2039,21 +2019,18 @@ const PET_REMIND_INTROS = [
   "Alert! Mấy cái deadline đang tới kìa bạn ơi!",
 ];
 const PET_TALKS = [
-  "Hôm nay plan gì? Kể tui nghe!", "Track xong chưa? Đừng để tui nhắc nha!",
-  "Ăn gì chưa? Ghi lại liền đi!", "Chuỗi ngày đẹp lắm, đừng phá nha bro!",
-  "Ngày mới, vibe mới! Let's go!", "Uống nước đi nè, healthy lifestyle!",
-  "Keep pushing! Bạn đang on track!", "Thở sâu, reset mindset 1 chút!",
-  "Plan ngày mai chưa? Tui chờ!", "Chi tiêu hôm nay sao? Check lại đi!",
-  "Gym session hôm nay thế nào?", "Rest day cũng là gain day nha!",
-  "Share 1 win nhỏ hôm nay đi!", "Tui luôn ở đây back bạn!",
-  "Bạn đang làm tốt lắm rồi á!", "Thói quen hôm nay check hết chưa?",
-  "Plan done chưa? Tick hết đi!", "Ngủ sớm nha, recovery quan trọng!",
-  "Focus mode ON! No distraction!", "Mỗi ngày level up 1% bạn nhé!",
-  "Legs day hay chest day? Ghi lại!", "Quick note gì không? Tui chờ!",
-  "Hôm nay mood thế nào?", "Track chi tiêu = quản lý tốt hơn!",
-  "Weekend vibes! Nhưng vẫn track nha!", "Next week plan sẵn chưa?",
-  "Eat clean, train mean!", "Đọc sách chưa bro?",
-  "Tui tin bạn! Cứ consistent thôi!", "No pain no gain! Track nào!",
+  "Bạn đang làm gì? Nếu muốn, hãy bắt đầu một phiên track.",
+  "Có khoản chi nào vừa phát sinh cần ghi lại không?",
+  "Bạn đã ăn gì? Có thể chụp ảnh và thêm bữa ăn ngay.",
+  "Muốn xem lại hôm nay, hãy nhấn giữ mình rồi mở tab Hôm nay.",
+  "Nếu ngày mai có việc quan trọng, bạn có thể lên kế hoạch trước.",
+  "Một hoạt động nhỏ cũng đáng ghi lại nếu nó quan trọng với bạn.",
+  "Nếu đang tập trung, hãy dùng hẹn giờ để tránh quên thời gian.",
+  "Bạn có thể lưu món ăn thường dùng để thêm nhanh lần sau.",
+  "Nhấn giữ mình để xem nhắc nhở và kế hoạch sắp tới.",
+  "Cuối ngày hãy xem Nhật ký để biết mình đã làm những gì.",
+  "Nếu chưa có dữ liệu, hãy bắt đầu bằng hoạt động đang diễn ra.",
+  "Kế hoạch chỉ hữu ích khi cụ thể: việc gì, lúc nào và kết quả mong muốn.",
 ];
 
 function PetAssistant() {
