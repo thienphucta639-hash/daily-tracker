@@ -3,231 +3,202 @@
 import { useState } from "react";
 import * as S from "@/lib/storage";
 import { fmtCurrency, fmtDateDisp, daysUntil, parseMoney, formatDate, CAT_ICONS } from "@/lib/utils";
-import { getUpcomingHolidays } from "@/lib/holidays";
+import { getCurrentAndNextMonthHolidays } from "@/lib/holidays";
 
-function SvgIcon({ path, size = 13, color = "currentColor" }: { path: string; size?: number; color?: string }) {
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={path} /></svg>;
+const input = "w-full px-2.5 py-2 rounded-lg bg-bg2 border border-line text-[11px] outline-none focus:border-ink min-h-[40px]";
+
+// ── Money input có hiện format VNĐ khi gõ ──
+function MoneyInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const n = parseMoney(value);
+  return <div>
+    <input value={value} onChange={e => onChange(e.target.value)} inputMode="decimal" placeholder={placeholder} className={input} />
+    {value.trim() && <p className={`text-[9px] text-right mt-0.5 font-bold ${n == null ? "text-red" : "text-green"}`}>{n == null ? "Sai số tiền" : fmtCurrency(n)}</p>}
+  </div>;
+}
+
+function SvgIcon({ path, size = 13 }: { path: string; size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={path} /></svg>;
 }
 const I_TRAVEL = "M9 20l-5.5-4 3.5-1L9 20l5-2 2 2 5-4-8-5-5 2 3-4 9 5 2-2-3-8-2-2-6 4 2 3-7 4-2 3 5 2-4 2";
 
-const input = "w-full px-2.5 py-2 rounded-lg bg-bg2 border border-line text-[11px] outline-none focus:border-ink min-h-[40px]";
+let notifyCtx: AudioContext | null = null;
 export function playNotify() {
   try {
     const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ac = new Ctx();
-    const g = ac.createGain(); g.connect(ac.destination); g.gain.value = 0.25;
-    [880, 1174, 1568].forEach((f, i) => {
-      const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = f;
-      o.connect(g); o.start(ac.currentTime + i * 0.18); o.stop(ac.currentTime + i * 0.18 + 0.28);
-    });
-  } catch { /* blocked */ }
+    if (!notifyCtx) notifyCtx = new Ctx();
+    if (notifyCtx.state === "suspended") notifyCtx.resume();
+    const g = notifyCtx.createGain(); g.gain.value = 0.4; g.connect(notifyCtx.destination);
+    [880, 1174, 1568].forEach((f, i) => { const o = notifyCtx!.createOscillator(); o.frequency.value = f; o.connect(g); o.start(notifyCtx!.currentTime + i * 0.16); o.stop(notifyCtx!.currentTime + i * 0.16 + 0.24); });
+  } catch {}
 }
+if (typeof window !== "undefined") { const u = () => { try { notifyCtx ??= new AudioContext(); notifyCtx.resume(); } catch {} }; window.addEventListener("touchstart", u, { once: true }); window.addEventListener("click", u, { once: true }); }
 
+// ═══ EXPIRY ═══
 export function ExpiryManager({ onChanged }: { onChanged: () => void }) {
   const [name, setName] = useState(""); const [price, setPrice] = useState(""); const [days, setDays] = useState(""); const [link, setLink] = useState("");
   const items = S.getExpiringWithin(999).sort((a, b) => a.daysLeft - b.daysLeft);
   return <div className="p-3 space-y-2">
-    <div className="text-[10px] font-bold">Hạn sử dụng đồ dùng</div>
-    <div className="grid grid-cols-2 gap-1.5">
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên (Chuối, Trứng...)" className={input} />
-      <input value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" placeholder="Giá" className={input} />
-      <input value={days} onChange={e => setDays(e.target.value)} inputMode="numeric" placeholder="Bao nhiêu ngày hết hạn" className={input} />
-      <input value={link} onChange={e => setLink(e.target.value)} placeholder="Link mua lại (tùy chọn)" className={input} />
-    </div>
-    <button onClick={() => { const p = parseMoney(price) || 0, d = parseInt(days) || 0;
-      if (!name.trim() || d <= 0) return;
-      // Tự ghi lại giá mua để lần sau bán gợi đúng giá
-      if (p > 0) S.addExpensePreset({ description: name.trim(), amount: p, category: "shopping" });
-      S.addExpiryItem({ name: name.trim(), price: p, link: link.trim() || null, boughtDate: formatDate(new Date()), expiryDays: d });
-      setName(""); setPrice(""); setDays(""); setLink(""); onChanged(); playNotify();
-    }} className="w-full min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold">+ Thêm</button>
-    {items.length === 0 && <div className="text-center text-mute text-[9px] py-2">Chưa có món nào. Thêm chuối/trứng/sữa để pet nhắc hạn.</div>}
-    {items.map(x => {
-      const urgent = x.daysLeft <= 1;
-      return <div key={x.id} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${urgent ? "border-red/50 bg-red/5" : "border-line bg-bg2"}`}>
-        <div className="flex-1 min-w-0">
-          <div className="text-[11px] font-bold truncate">{x.name}{x.price > 0 && <span className="text-mute font-normal"> · {fmtCurrency(x.price)}</span>}</div>
-          <div className={`text-[9px] ${urgent ? "text-red font-bold" : "text-mute"}`}>
-            {x.daysLeft < 0 ? `Hết hạn ${Math.abs(x.daysLeft)} ngày trước!` : x.daysLeft === 0 ? "HẾT HẠN HÔM NAY!" : `Còn ${x.daysLeft} ngày · ${fmtDateDisp(x.expiryDate)}`}
-          </div>
-        </div>
-        {x.link && <button onClick={() => window.open(x.link || "", "_blank")} className="text-[9px] bg-blue2 text-blue px-1.5 py-1 rounded font-bold">Mua lại</button>}
-        <button onClick={() => { S.deleteExpiryItem(x.id); onChanged(); }} className="w-7 h-7 text-mute hover:text-red">✕</button>
-      </div>;
-    })}
+    <div className="text-[10px] font-bold">Hạn sử dụng · pet nhắc trước 1 ngày</div>
+    <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên đồ/món" className={input} />
+    <MoneyInput value={price} onChange={setPrice} placeholder="Giá mua (VD: 25k, 50000)" />
+    <div className="flex gap-1.5"><input value={days} onChange={e => setDays(e.target.value)} inputMode="numeric" placeholder="Dùng được bao nhiêu ngày" className={input} /><input value={link} onChange={e => setLink(e.target.value)} placeholder="Link mua lại (tùy chọn)" className={input} /></div>
+    <button onClick={() => { const d = +days || 0, p = parseMoney(price) || 0; if (!name.trim() || d <= 0) return; if (p > 0) S.addExpensePreset({ description: name.trim(), amount: p, category: "shopping" }); S.addExpiryItem({ name: name.trim(), price: p, link: link.trim() || null, boughtDate: formatDate(new Date()), expiryDays: d }); setName(""); setPrice(""); setDays(""); setLink(""); onChanged(); }} className="w-full min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold">Thêm</button>
+    {items.map(x => <div key={x.id} className={`flex gap-2 items-center p-2 rounded-lg border ${x.daysLeft <= 1 ? "border-red/50 bg-red/5" : "border-line bg-bg2"}`}>
+      <div className="flex-1"><div className="text-[10px] font-bold">{x.name}{x.price > 0 && <span className="text-mute font-normal"> · {fmtCurrency(x.price)}</span>}</div>
+      <div className={`text-[9px] ${x.daysLeft <= 1 ? "text-red font-bold" : "text-mute"}`}>{x.daysLeft < 0 ? `Quá hạn ${-x.daysLeft} ngày` : x.daysLeft === 0 ? "HẾT HẠN HÔM NAY!" : `Còn ${x.daysLeft} ngày · ${fmtDateDisp(x.expiryDate)}`}</div></div>
+      {x.link && <button onClick={() => window.open(x.link || "", "_blank")} className="px-2 py-1 bg-blue2 text-blue rounded text-[8px] font-bold">Mua</button>}
+      <button onClick={() => { S.deleteExpiryItem(x.id); onChanged(); }} className="w-7 h-7 text-mute">✕</button>
+    </div>)}
   </div>;
 }
 
+// ═══ RECURRING ═══
 export function RecurringManager({ onChanged }: { onChanged: () => void }) {
-  const [name, setName] = useState(""); const [amount, setAmount] = useState(""); const [next, setNext] = useState(""); const [cycle, setCycle] = useState<S.RecurringItem["cycle"]>("monthly"); const [kind, setKind] = useState<S.RecurringItem["kind"]>("subscription"); const [note, setNote] = useState("");
-  const items = S.getRecurringDueWithin(999).sort((a, b) => a.daysLeft - b.daysLeft);
-  const kindLabel: Record<S.RecurringItem["kind"], string> = { subscription: "Gói cước", insurance: "Bảo hiểm", vehicle: "Xe", bill: "Hóa đơn", chore: "Việc định kỳ", other: "Khác" };
+  const [name, setName] = useState(""); const [amount, setAmount] = useState(""); const [next, setNext] = useState(""); const [endDate, setEndDate] = useState(""); const [cycle, setCycle] = useState<S.RecurringItem["cycle"]>("monthly"); const [kind, setKind] = useState<S.RecurringItem["kind"]>("subscription"); const [note, setNote] = useState(""); const [keep, setKeep] = useState(true);
+  const items = S.getRecurringDueWithin(999); const kindLabel: Record<S.RecurringItem["kind"], string> = { subscription: "Gói", insurance: "Bảo hiểm", vehicle: "Xe", bill: "Hóa đơn", chore: "Việc", other: "Khác" };
   return <div className="p-3 space-y-2">
-    <div className="text-[10px] font-bold">Gia hạn định kỳ (Netflix, Gym, bảo hiểm, xe...)</div>
-    <input value={name} onChange={e => setName(e.target.value)} placeholder="Netflix, Spotify, Bảo hiểm xe, Gym..." className={input} />
-    <div className="grid grid-cols-4 gap-1">{(["subscription","insurance","vehicle","bill"] as const).map(k => <button key={k} onClick={() => setKind(k)} className={`min-h-[36px] rounded-md text-[9px] font-bold ${kind === k ? "bg-ink text-bg" : "bg-bg2 border border-line text-mute"}`}>{kindLabel[k]}</button>)}</div>
-    <div className="grid grid-cols-2 gap-1.5">
-      <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal" placeholder="Số tiền (tùy chọn)" className={input} />
-      <select value={cycle} onChange={e => setCycle(e.target.value as S.RecurringItem["cycle"])} className={input}>
-        <option value="daily">Hằng ngày</option><option value="weekly">Hàng tuần</option><option value="monthly">Hàng tháng</option><option value="quarterly">Hàng quý</option><option value="yearly">Hàng năm</option>
-      </select>
-    </div>
-    <label className="text-[9px] text-mute font-bold block">Gia hạn tiếp theo<input type="date" value={next} onChange={e => setNext(e.target.value)} className={`${input} min-h-[44px] mt-0.5`} /></label>
-    <input value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú (tùy chọn)" className={input} />
-    <button onClick={() => { if (!name.trim() || !next) return;
-      S.addRecurring({ name: name.trim(), kind, amount: parseMoney(amount) || 0, cycle, cycleDays: null, nextDate: next, note: note.trim() || null, link: null });
-      setName(""); setAmount(""); setNext(""); setNote(""); onChanged(); playNotify();
-    }} className="w-full min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold">+ Thêm</button>
-    {items.length === 0 && <div className="text-center text-mute text-[9px] py-2">Chưa có gói nào. Thêm Netflix/Gym để pet nhắc gia hạn.</div>}
-    {items.map(r => {
-      const urgent = r.daysLeft <= 1;
-      return <div key={r.id} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${urgent ? "border-red/50 bg-red/5" : "border-line bg-bg2"}`}>
-        <div className="flex-1 min-w-0">
-          <div className="text-[11px] font-bold truncate">{r.name} <span className="text-[8px] text-mute font-normal">· {kindLabel[r.kind]}</span></div>
-          <div className={`text-[9px] ${urgent ? "text-red font-bold" : "text-mute"}`}>
-            {r.daysLeft < 0 ? `Trễ ${Math.abs(r.daysLeft)} ngày!` : r.daysLeft === 0 ? "GIA HẠN HÔM NAY!" : `Còn ${r.daysLeft} ngày · ${fmtDateDisp(r.nextDate)} · ${S.cycleLabel(r)}`}
-            {r.amount > 0 && <span className="text-red"> · {fmtCurrency(r.amount)}</span>}
-          </div>
-        </div>
-        <button onClick={() => { S.bumpRecurring(r.id); onChanged(); playNotify(); }} title="Đã gia hạn" className="px-2 py-1 bg-green2 border border-green/20 text-green rounded-md text-[9px] font-bold">Đã đóng</button>
-        <button onClick={() => { S.deleteRecurring(r.id); onChanged(); }} className="w-7 h-7 text-mute hover:text-red">✕</button>
-      </div>;
-    })}
+    <div className="text-[10px] font-bold">Gia hạn định kỳ</div>
+    <input value={name} onChange={e => setName(e.target.value)} placeholder="4G 10k/ngày, Gym 7 tháng, Netflix..." className={input} />
+    <div className="grid grid-cols-3 gap-1">{(["subscription", "insurance", "vehicle", "bill", "chore", "other"] as const).map(k => <button key={k} onClick={() => setKind(k)} className={`min-h-[34px] rounded text-[8px] font-bold ${kind === k ? "bg-ink text-bg" : "bg-bg2 border border-line text-mute"}`}>{kindLabel[k]}</button>)}</div>
+    <MoneyInput value={amount} onChange={setAmount} placeholder="Số tiền (VD: 10k, 500000)" />
+    <div className="grid grid-cols-2 gap-1.5"><select value={cycle} onChange={e => setCycle(e.target.value as S.RecurringItem["cycle"])} className={input}><option value="daily">Hằng ngày</option><option value="weekly">Hàng tuần</option><option value="monthly">Hàng tháng</option><option value="quarterly">Hàng quý</option><option value="yearly">Hàng năm</option></select>
+    <label className="text-[9px] text-mute font-bold">Ngày bắt đầu<input type="date" value={next} onChange={e => setNext(e.target.value)} className={`${input} mt-0.5`} /></label></div>
+    <label className="text-[9px] text-mute font-bold">Hạn cuối (tùy chọn — VD: gói Gym 7 tháng thì nhập ngày hết hạn)<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`${input} mt-0.5`} /></label>
+    <input value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú" className={input} />
+    <label className="flex gap-2 items-center text-[9px] text-mute"><input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)} />Tiếp tục gia hạn</label>
+    <button onClick={() => { if (!name.trim() || !next) return; S.addRecurring({ name: name.trim(), kind, amount: parseMoney(amount) || 0, cycle, cycleDays: null, nextDate: next, endDate: endDate || null, note: note.trim() || null, link: null, keep }); setName(""); setAmount(""); setNext(""); setEndDate(""); setNote(""); onChanged(); }} className="w-full min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold">Thêm</button>
+    {items.map(r => <div key={r.id} className={`flex gap-2 items-center p-2 rounded-lg border ${r.daysLeft <= 1 ? "border-red/50 bg-red/5" : "border-line bg-bg2"}`}>
+      <div className="flex-1"><div className="text-[10px] font-bold">{r.name}{r.keep === false && <span className="text-gold text-[8px]"> · CÂN NHẮC HỦY</span>}</div>
+      <div className={`text-[9px] ${r.daysLeft <= 1 ? "text-red" : "text-mute"}`}>{r.daysLeft < 0 ? `Trễ ${-r.daysLeft} ngày` : r.daysLeft === 0 ? "HÔM NAY" : `Còn ${r.daysLeft} ngày`} · {S.cycleLabel(r)}{r.amount > 0 && ` · ${fmtCurrency(r.amount)}`}</div>
+      {r.endDate && <div className={`text-[9px] ${daysUntil(r.endDate) <= 7 ? "text-red font-bold" : "text-mute"}`}>Hết hạn: {fmtDateDisp(r.endDate)}{daysUntil(r.endDate) >= 0 ? ` (còn ${daysUntil(r.endDate)} ngày)` : " (đã hết)"}</div>}</div>
+      <button onClick={() => { S.bumpRecurring(r.id); onChanged(); }} className="px-2 min-h-[32px] bg-green2 text-green rounded text-[8px] font-bold">Đã đóng</button>
+      <button onClick={() => { S.deleteRecurring(r.id); onChanged(); }} className="w-7 h-7 text-mute">✕</button>
+    </div>)}
   </div>;
 }
 
-export function OthersManager({ onChanged }: { onChanged: () => void }) {
-  const [section, setSection] = useState<"place" | "borrow" | null>(null);
-  const [name, setName] = useState(""); const [note, setNote] = useState(""); const [address, setAddress] = useState(""); const [bestFor, setBestFor] = useState(""); const [priceRange, setPriceRange] = useState(""); const [placeLink, setPlaceLink] = useState(""); const [rating, setRating] = useState(5); const [kind, setKind] = useState<S.PlaceItem["kind"]>("food");
-  const [borrower, setBorrower] = useState(""); const [item, setItem] = useState(""); const [ret, setRet] = useState(""); const [bNote, setBNote] = useState(""); const [priority, setPriority] = useState(1);
-  const places = S.getPlaces(), borrows = S.getBorrows(), overdue = S.getOverdueBorrows(30);
-  const suggest = () => { const p = S.suggestPlace(); alert(p ? `${p.name}\n${p.kind === "food" ? "Quán ăn" : p.kind === "coffee" ? "Cafe" : p.kind === "play" ? "Chỗ chơi" : "Địa điểm"}\n${p.address || ""}\n${p.bestFor ? "Hợp: " + p.bestFor : ""}\n${p.priceRange ? "Giá: " + p.priceRange : ""}\n${p.note || ""}${p.link ? "\n" + p.link : ""}` : "Chưa lưu địa điểm nào."); };
-  return <div className="p-3 space-y-2">
-    <button onClick={() => setSection(section === "place" ? null : "place")} className="w-full min-h-[42px] px-2 bg-bg2 border border-line rounded-lg flex items-center justify-between text-[10px] font-bold"><span>Địa điểm hay ({places.length})</span><span>›</span></button>
-    {section === "place" && <div className="space-y-1.5">
-      <div className="grid grid-cols-4 gap-1">{(["food","coffee","play","other"] as const).map(k => <button key={k} onClick={() => setKind(k)} className={`min-h-[34px] rounded-md text-[8px] font-bold ${kind === k ? "bg-ink text-bg" : "bg-bg2 border border-line text-mute"}`}>{k === "food" ? "Ăn" : k === "coffee" ? "Cafe" : k === "play" ? "Chơi" : "Khác"}</button>)}</div>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên địa điểm" className={input} />
-      <div className="grid grid-cols-2 gap-1.5"><input value={address} onChange={e => setAddress(e.target.value)} placeholder="Địa chỉ" className={input}/><input value={priceRange} onChange={e => setPriceRange(e.target.value)} placeholder="Khoảng giá" className={input}/><input value={bestFor} onChange={e => setBestFor(e.target.value)} placeholder="Hợp đi với ai/dịp gì" className={input}/><input value={placeLink} onChange={e => setPlaceLink(e.target.value)} placeholder="Link bản đồ" className={input}/></div>
-      <input value={note} onChange={e => setNote(e.target.value)} placeholder="Món ngon / điểm hay / lưu ý" className={input}/>
-      <div className="flex gap-1">{[1,2,3,4,5].map(n => <button key={n} onClick={() => setRating(n)} className={`flex-1 min-h-[32px] rounded-md text-[10px] ${n <= rating ? "bg-gold2 text-gold" : "bg-bg2 text-mute"}`}>★</button>)}</div>
-      <div className="flex gap-1.5"><button onClick={() => { if (!name.trim()) return; S.addPlace({ name:name.trim(), kind, note:note||null, link:placeLink||null, address:address||null, bestFor:bestFor||null, priceRange:priceRange||null, rating }); setName("");setNote("");setAddress("");setBestFor("");setPriceRange("");setPlaceLink("");onChanged(); }} className="flex-1 min-h-[38px] bg-ink text-bg rounded-lg text-[9px] font-bold">Lưu địa điểm</button><button onClick={suggest} className="flex-1 min-h-[38px] bg-gold2 text-gold border border-gold/20 rounded-lg text-[9px] font-bold">Pet: đi đâu?</button></div>
-      {places.map(p => <div key={p.id} className="bg-bg2 border border-line rounded-lg p-2"><div className="flex"><div className="flex-1"><div className="text-[10px] font-bold">{p.name} <span className="text-gold">{"★".repeat(p.rating||0)}</span></div><div className="text-[9px] text-mute">{p.address}{p.priceRange?` · ${p.priceRange}`:""}</div>{p.bestFor&&<div className="text-[9px] text-mute">Hợp: {p.bestFor}</div>}{p.note&&<div className="text-[9px]">{p.note}</div>}</div><button onClick={()=>{S.deletePlace(p.id);onChanged();}} className="w-7 h-7 text-mute">✕</button></div>{p.link&&<button onClick={()=>window.open(p.link||"","_blank")} className="text-[9px] text-blue mt-1">Mở bản đồ</button>}</div>)}
-    </div>}
-    <button onClick={() => setSection(section === "borrow" ? null : "borrow")} className="w-full min-h-[42px] px-2 bg-bg2 border border-line rounded-lg flex items-center justify-between text-[10px] font-bold"><span>Đồ cho mượn ({borrows.length}) {overdue.length>0&&<b className="text-red">· {overdue.length} trễ</b>}</span><span>›</span></button>
-    {section === "borrow" && <div className="space-y-1.5">
-      <div className="grid grid-cols-2 gap-1.5"><input value={borrower} onChange={e=>setBorrower(e.target.value)} placeholder="Ai mượn" className={input}/><input value={item} onChange={e=>setItem(e.target.value)} placeholder="Mượn gì" className={input}/></div>
-      <label className="text-[9px] text-mute">Cần lấy lại ngày<input type="date" value={ret} onChange={e=>setRet(e.target.value)} className={input}/></label>
-      <input value={bNote} onChange={e=>setBNote(e.target.value)} placeholder="Ghi chú" className={input}/>
-      <div className="grid grid-cols-3 gap-1">{[0,1,2].map(p=><button key={p} onClick={()=>setPriority(p)} className={`min-h-[34px] rounded-md text-[8px] font-bold ${priority===p?"bg-ink text-bg":"bg-bg2 border border-line text-mute"}`}>{p===0?"Không gấp":p===1?"Cần lại":"Rất gấp"}</button>)}</div>
-      <button onClick={()=>{if(!borrower.trim()||!item.trim())return;S.addBorrow({borrower:borrower.trim(),item:item.trim(),lentDate:formatDate(new Date()),expectedReturn:ret||null,priority,note:bNote||null});setBorrower("");setItem("");setRet("");setBNote("");onChanged();playNotify();}} className="w-full min-h-[38px] bg-ink text-bg rounded-lg text-[9px] font-bold">Ghi lại</button>
-      {borrows.map(b=>{const left=b.expectedReturn?daysUntil(b.expectedReturn):null,urgent=(b.priority||0)>=2||left!==null&&left<=0;return <div key={b.id} className={`bg-bg2 border rounded-lg p-2 ${urgent?"border-red/50":"border-line"}`}><div className="flex gap-2"><div className="flex-1"><div className="text-[10px] font-bold">{b.borrower} ← {b.item} {(b.priority||0)>=2&&<span className="text-red">RẤT GẤP</span>}</div><div className={`text-[9px] ${urgent?"text-red":"text-mute"}`}>{left===null?"Chưa đặt hạn":left<0?`Trễ ${Math.abs(left)} ngày`:left===0?"CẦN LẠI HÔM NAY":`Còn ${left} ngày`}</div>{b.note&&<div className="text-[9px]">{b.note}</div>}</div><button onClick={()=>{S.markBorrowReturned(b.id);onChanged();}} className="px-2 min-h-[32px] bg-green2 text-green rounded-md text-[8px] font-bold">Đã trả</button></div><div className="flex gap-1 mt-1">{b.expectedReturn&&<button onClick={()=>{const d=prompt("Gia hạn tới ngày (YYYY-MM-DD):",b.expectedReturn||"");if(d){S.extendBorrow(b.id,d);onChanged();}}} className="text-[8px] text-blue">Gia hạn ngày trả</button>}<button onClick={()=>{S.deleteBorrow(b.id);onChanged();}} className="ml-auto text-[8px] text-mute">Xóa</button></div></div>})}
-    </div>}
-  </div>;
-}
-
+// ═══ CHECKLIST ═══
 export function ChecklistManager({ onChanged }: { onChanged: () => void }) {
   const [listId, setListId] = useState<string | null>(null);
-  const [newList, setNewList] = useState(""); const [newIcon, setNewIcon] = useState("travel");
-  const [newItem, setNewItem] = useState("");
-  const lists = S.getChecklists();
-  const current = lists.find(l => l.id === listId) || lists[0] || null;
+  const [newList, setNewList] = useState(""); const [newIcon, setNewIcon] = useState("travel"); const [tripDate, setTripDate] = useState(""); const [remindBefore, setRemindBefore] = useState("1"); const [newItem, setNewItem] = useState("");
+  const lists = S.getChecklists(); const current = lists.find(l => l.id === listId) || lists[0] || null;
   const preIconOpts = ["travel", "work", "study", "personal", "chores", "exercise", "eat", "social"] as const;
   return <div className="p-3 space-y-2">
     <div className="text-[10px] font-bold">Checklist mang theo khi đi</div>
-    <div className="flex gap-1.5">
-      <input value={newList} onChange={e => setNewList(e.target.value)} placeholder="Chủ đề (Du lịch, Đi học, Đi làm...)" className={input} />
-      <div className="grid grid-cols-4 gap-0.5 w-32 shrink-0">{preIconOpts.map(k => <button key={k} onClick={() => setNewIcon(k)} title={k} className={`min-h-[34px] rounded flex items-center justify-center ${newIcon === k ? "bg-ink text-bg" : "bg-bg2 border border-line"}`}><SvgIcon path={k === "travel" ? I_TRAVEL : CAT_ICONS[k] || CAT_ICONS.other} size={13} /></button>)}</div>
-      <button onClick={() => { if (!newList.trim()) return; S.addChecklist({ name: newList.trim(), icon: newIcon, items: [] }); setNewList(""); onChanged(); }} className="px-3 min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold shrink-0">+ Tạo</button>
+    <input value={newList} onChange={e => setNewList(e.target.value)} placeholder="Chủ đề (Du lịch, Đi học...)" className={input} />
+    <div className="grid grid-cols-2 gap-1.5">
+      <label className="text-[9px] text-mute font-bold">Ngày đi<input type="date" value={tripDate} onChange={e => setTripDate(e.target.value)} className={`${input} mt-0.5`} /></label>
+      <label className="text-[9px] text-mute font-bold">Nhắc trước (ngày)<input type="number" value={remindBefore} onChange={e => setRemindBefore(e.target.value)} placeholder="1" className={`${input} mt-0.5`} /></label>
     </div>
-    {lists.length === 0 && <div className="text-center text-mute text-[9px] py-2">Chưa có checklist. Tạo một cái cho Du lịch / Đi học / Đi làm để pet nhắc đem đủ đồ.</div>}
-    {lists.length > 0 && <>
-      <div className="flex gap-1 overflow-x-auto pb-0.5">{lists.map(l => <button key={l.id} onClick={() => setListId(l.id)} className={`shrink-0 px-2.5 py-1.5 rounded-lg text-[10px] font-bold min-h-[36px] flex items-center gap-1 ${current?.id === l.id ? "bg-ink text-bg" : "bg-bg2 border border-line text-mute"}`}><SvgIcon path={l.icon === "travel" ? I_TRAVEL : CAT_ICONS[l.icon] || CAT_ICONS.other} size={12} />{l.name}</button>)}</div>
-      {current && <div className="bg-bg2 rounded-lg border border-line p-2">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-[10px] font-bold">{current.name} · {current.items.filter(i => i.checked).length}/{current.items.length}</span>
-          <div className="flex gap-1">
-            <button onClick={() => { S.resetChecklist(current.id); onChanged(); }} className="text-[8px] text-mute hover:text-ink px-1.5 py-1 rounded" title="Dùng lại lần sau">↺ Dùng lại</button>
-            <button onClick={() => { if (confirm("Xóa checklist?")) { S.deleteChecklist(current.id); setListId(null); onChanged(); } }} className="text-[8px] text-mute hover:text-red px-1.5 py-1 rounded">Xóa</button>
-          </div>
-        </div>
-        <div className="flex gap-1.5 mb-1.5">
-          <input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && newItem.trim()) { S.addChecklistItem(current.id, newItem.trim()); setNewItem(""); onChanged(); } }} placeholder="Đồ cần đem (áo, sạc, tiền mặt...)" className={input} />
-          <button onClick={() => { if (newItem.trim()) { S.addChecklistItem(current.id, newItem.trim()); setNewItem(""); onChanged(); } }} className="px-3 min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold shrink-0">+</button>
-        </div>
-        {current.items.length === 0 && <div className="text-[9px] text-mute text-center py-1.5">Chưa có đồ nào. Thêm đồng, sạc, tiền mặt...</div>}
-        {current.items.map(it => (
-          <div key={it.id} className="flex items-center gap-2 py-1 group">
-            <button onClick={() => { S.toggleChecklistItem(current.id, it.id); onChanged(); }} className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all active:scale-90 shrink-0 ${it.checked ? "bg-green border-green text-bg" : "border-line hover:border-ink"}`}>{it.checked && "✓"}</button>
+    <div className="flex gap-1">{preIconOpts.map(k => <button key={k} onClick={() => setNewIcon(k)} className={`flex-1 min-h-[34px] rounded flex items-center justify-center ${newIcon === k ? "bg-ink text-bg" : "bg-bg2 border border-line"}`}><SvgIcon path={k === "travel" ? I_TRAVEL : CAT_ICONS[k] || CAT_ICONS.other} size={13} /></button>)}</div>
+    <button onClick={() => { if (!newList.trim()) return; S.addChecklist({ name: newList.trim(), icon: newIcon, items: [], tripDate: tripDate || null, remindBefore: parseInt(remindBefore) || 1 }); setNewList(""); setTripDate(""); onChanged(); }} className="w-full min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold">+ Tạo checklist</button>
+    {lists.map(l => {
+      const isCurrent = current?.id === l.id;
+      const dl = l.tripDate ? daysUntil(l.tripDate) : null;
+      const shouldRemind = l.tripDate && dl !== null && dl <= (l.remindBefore || 1) && l.items.some(i => !i.checked);
+      return <div key={l.id}>
+        <button onClick={() => setListId(isCurrent ? null : l.id)} className={`w-full min-h-[40px] px-2 rounded-lg flex items-center justify-between text-[10px] font-bold ${isCurrent ? "bg-ink text-bg" : "bg-bg2 border border-line"}`}>
+          <span className="flex items-center gap-1"><SvgIcon path={l.icon === "travel" ? I_TRAVEL : CAT_ICONS[l.icon] || CAT_ICONS.other} size={12} />{l.name}{shouldRemind && <span className="text-gold">⚠</span>}</span>
+          <span className="text-[9px] font-normal">{l.items.filter(i => i.checked).length}/{l.items.length}{l.tripDate && ` · ${fmtDateDisp(l.tripDate)}`}</span>
+        </button>
+        {isCurrent && <div className="bg-bg2 rounded-lg border border-line p-2 mt-1 space-y-1.5">
+          {l.tripDate && <div className={`text-[9px] font-bold ${dl === 0 ? "text-gold" : dl !== null && dl < 0 ? "text-red" : "text-mute"}`}>{dl === 0 ? "ĐI HÔM NAY!" : dl !== null && dl < 0 ? `Đã qua ${-dl} ngày` : `Còn ${dl} ngày nữa đi`}</div>}
+          <div className="flex gap-1.5"><input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && newItem.trim()) { S.addChecklistItem(current!.id, newItem.trim()); setNewItem(""); onChanged(); } }} placeholder="Đồ cần đem..." className={input} /><button onClick={() => { if (newItem.trim()) { S.addChecklistItem(current!.id, newItem.trim()); setNewItem(""); onChanged(); } }} className="px-3 bg-ink text-bg rounded-lg text-[10px] font-bold">+</button></div>
+          {l.items.map(it => <div key={it.id} className="flex items-center gap-2 py-0.5 group">
+            <button onClick={() => { S.toggleChecklistItem(l.id, it.id); onChanged(); }} className={`w-5 h-5 rounded border-2 flex items-center justify-center text-[9px] ${it.checked ? "bg-green border-green text-bg" : "border-line"}`}>{it.checked && "✓"}</button>
             <span className={`text-[11px] flex-1 ${it.checked ? "line-through text-mute" : ""}`}>{it.name}</span>
-            <button onClick={() => { S.deleteChecklistItem(current.id, it.id); onChanged(); }} className="text-mute text-[10px] hover:text-red opacity-100 sm:opacity-0 sm:group-hover:opacity-100">✕</button>
-          </div>
-        ))}
-        {current.items.length > 0 && current.items.every(i => i.checked) && <div className="text-[9px] text-green font-bold text-center py-1">Đủ đồ! Sẵn sàng đi ✓</div>}
-      </div>}
-    </>}
+            <button onClick={() => { S.deleteChecklistItem(l.id, it.id); onChanged(); }} className="text-mute text-[9px] opacity-100 sm:opacity-0 sm:group-hover:opacity-100">✕</button>
+          </div>)}
+          {l.items.length > 0 && l.items.every(i => i.checked) && <div className="text-[9px] text-green font-bold text-center py-1">Đủ đồ! Sẵn sàng ✓</div>}
+          <div className="flex gap-1"><button onClick={() => { S.resetChecklist(l.id); onChanged(); }} className="text-[8px] text-mute px-1.5 py-1 rounded">↺ Dùng lại</button><button onClick={() => { if (confirm("Xóa?")) { S.deleteChecklist(l.id); setListId(null); onChanged(); } }} className="text-[8px] text-mute hover:text-red px-1.5 py-1 rounded ml-auto">Xóa</button></div>
+        </div>}
+      </div>;
+    })}
   </div>;
 }
 
+// ═══ HOLIDAYS — theo tháng hiện tại + tháng sau ═══
 export function HolidaysManager({ onChanged }: { onChanged: () => void }) {
   void onChanged;
   const [name, setName] = useState(""); const [date, setDate] = useState(""); const [note, setNote] = useState("");
   const custom = S.getCustomEvents();
-  const holidays = getUpcomingHolidays(8);
+  const holidays = getCurrentAndNextMonthHolidays();
+  const curMonth = holidays[0]?.monthLabel || "";
+  const nextMonth = holidays.find(h => h.monthLabel !== curMonth)?.monthLabel || "";
+  const curHolidays = holidays.filter(h => h.monthLabel === curMonth);
+  const nextHolidays = holidays.filter(h => h.monthLabel === nextMonth);
   return <div className="p-3 space-y-2">
     <div className="text-[10px] font-bold">Đếm ngược lễ & sự kiện</div>
-    <div className="text-[8px] text-mute">Lễ Tin Lành và lễ Việt Nam có sẵn. Tự thêm sinh nhật, thi, hẹn...</div>
-    <div className="flex gap-1.5">
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên sự kiện" className={input} />
-      <input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${input} shrink-0 w-32`} />
-      <button onClick={() => { if (!name.trim() || !date) return; S.addCustomEvent({ name: name.trim(), date, note: note.trim() || null }); setName(""); setDate(""); setNote(""); onChanged(); playNotify(); }} className="px-3 min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold shrink-0">+</button>
-    </div>
-    {name && <input value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú (tùy chọn)" className={input} />}
-    {custom.length > 0 && <div className="text-[8px] font-bold text-mute uppercase">Sự kiện cá nhân</div>}
-    {[...custom].sort((a, b) => a.date.localeCompare(b.date)).map(ev => {
-      const dl = daysUntil(ev.date); if (dl < 0) return null;
-      return <div key={ev.id} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${dl === 0 ? "border-gold/40 bg-gold/5" : "border-line bg-bg2"}`}>
-        <div className="flex-1 min-w-0">
-          <div className="text-[11px] font-bold truncate">{ev.name}</div>
-          <div className={`text-[9px] ${dl === 0 ? "text-gold font-bold" : dl <= 3 ? "text-blue font-bold" : "text-mute"}`}>
-            {dl === 0 ? "HÔM NAY!" : dl === 1 ? "NGÀY MAI" : `còn ${dl} ngày`} · {fmtDateDisp(ev.date)}
-          </div>
-        </div>
-        <button onClick={() => { S.deleteCustomEvent(ev.id); onChanged(); }} className="w-7 h-7 text-mute hover:text-red">✕</button>
-      </div>;
-    })}
-    <div className="text-[8px] font-bold text-mute uppercase">Lễ có sẵn</div>
-    {holidays.map(h => (
-      <div key={h.date + h.name} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${h.daysLeft === 0 ? "border-gold/40 bg-gold/5" : "border-line bg-bg2"}`}>
-        <div className="flex-1 min-w-0">
-          <div className="text-[10px] font-bold truncate flex items-center gap-1.5">{h.christian ? <SvgIcon path="M12 21c-4.4 0-8-3.6-8-8s3.6-8 8-8 8 3.6 8 8-3.6 8-8 8zM12 9v8M10 11h4" size={11} /> : <SvgIcon path={CAT_ICONS.bills} size={11} />}{h.name}</div>
-          <div className={`text-[9px] ${h.daysLeft === 0 ? "text-gold font-bold" : h.daysLeft <= 3 ? "text-blue font-bold" : "text-mute"}`}>
-            {h.daysLeft === 0 ? "HÔM NAY!" : h.daysLeft === 1 ? "NGÀY MAI" : `còn ${h.daysLeft} ngày`} · {fmtDateDisp(h.date)}
-          </div>
-        </div>
-      </div>
-    ))}
+    <div className="flex gap-1.5"><input value={name} onChange={e => setName(e.target.value)} placeholder="Tên sự kiện cá nhân" className={input} /><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${input} shrink-0 w-28`} /><button onClick={() => { if (!name.trim() || !date) return; S.addCustomEvent({ name: name.trim(), date, note: note.trim() || null }); setName(""); setDate(""); setNote(""); onChanged(); }} className="px-3 min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold shrink-0">+</button></div>
+    {name && <input value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú" className={input} />}
+    {[...custom].sort((a, b) => a.date.localeCompare(b.date)).filter(e => daysUntil(e.date) >= 0).map(ev => <div key={ev.id} className={`flex gap-2 items-center rounded-lg border px-2 py-1.5 ${daysUntil(ev.date) === 0 ? "border-gold/40 bg-gold/5" : daysUntil(ev.date) <= 3 ? "border-blue/30" : "border-line bg-bg2"}`}>
+      <div className="flex-1"><div className="text-[10px] font-bold">{ev.name}</div><div className={`text-[9px] ${daysUntil(ev.date) === 0 ? "text-gold font-bold" : daysUntil(ev.date) <= 3 ? "text-blue" : "text-mute"}`}>{daysUntil(ev.date) === 0 ? "HÔM NAY!" : daysUntil(ev.date) === 1 ? "NGÀY MAI" : `còn ${daysUntil(ev.date)} ngày`} · {fmtDateDisp(ev.date)}</div></div>
+      <button onClick={() => { S.deleteCustomEvent(ev.id); onChanged(); }} className="w-7 h-7 text-mute">✕</button>
+    </div>)}
+    {curHolidays.length > 0 && <div className="text-[8px] font-bold text-mute uppercase pt-1">{curMonth}</div>}
+    {curHolidays.map(h => <div key={h.date + h.name} className={`flex gap-2 items-center rounded-lg border px-2 py-1.5 ${h.daysLeft === 0 ? "border-gold/40 bg-gold/5" : "border-line bg-bg2"}`}>
+      <div className="flex-1"><div className="text-[10px] font-bold">{h.name}</div><div className={`text-[9px] ${h.daysLeft === 0 ? "text-gold font-bold" : h.daysLeft <= 3 ? "text-blue" : "text-mute"}`}>{h.daysLeft === 0 ? "HÔM NAY!" : h.daysLeft === 1 ? "NGÀY MAI" : `còn ${h.daysLeft} ngày`} · {fmtDateDisp(h.date)}</div></div>
+    </div>)}
+    {nextHolidays.length > 0 && <div className="text-[8px] font-bold text-mute uppercase pt-1">{nextMonth}</div>}
+    {nextHolidays.map(h => <div key={h.date + h.name} className={`flex gap-2 items-center rounded-lg border px-2 py-1.5 ${h.daysLeft === 0 ? "border-gold/40 bg-gold/5" : "border-line bg-bg2"}`}>
+      <div className="flex-1"><div className="text-[10px] font-bold">{h.name}</div><div className={`text-[9px] ${h.daysLeft === 0 ? "text-gold font-bold" : "text-mute"}`}>{h.daysLeft === 0 ? "HÔM NAY!" : `còn ${h.daysLeft} ngày`} · {fmtDateDisp(h.date)}</div></div>
+    </div>)}
   </div>;
 }
 
-export function Top3Manager({ onChanged }: { onChanged: () => void }) {
-  const today = formatDate(new Date());
-  const plans = S.getPlans(today).filter(p => !p.done);
-  const top3 = S.getTop3(today);
+// ═══ OTHERS — Places + Borrows (một bảng, bấm chữ để xem) ═══
+export function OthersManager({ onChanged }: { onChanged: () => void }) {
+  const [tab, setTab] = useState<"places" | "borrow">("places");
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState(""); const [address, setAddress] = useState(""); const [note, setNote] = useState(""); const [best, setBest] = useState(""); const [price, setPrice] = useState(""); const [link, setLink] = useState(""); const [kind, setKind] = useState<S.PlaceItem["kind"]>("food"); const [expandedPlace, setExpandedPlace] = useState<string | null>(null);
+  const [borrower, setBorrower] = useState(""); const [item, setItem] = useState(""); const [ret, setRet] = useState(""); const [bNote, setBNote] = useState(""); const [priority, setPriority] = useState(1);
+  const places = S.getPlaces(), borrows = S.getBorrows();
   return <div className="p-3 space-y-2">
-    <div className="text-[10px] font-bold">Top 3 việc quan trọng hôm nay <span className="text-mute font-normal">(chọn đúng 3)</span></div>
-    {plans.length === 0 && <div className="text-[9px] text-mute">Chưa có kế hoạch nào hôm nay. Thêm plan trước rồi chọn Top 3.</div>}
-    {plans.map(p => {
-      const on = top3.includes(p.id);
-      return <button key={p.id} onClick={() => {
-        let next = on ? top3.filter(x => x !== p.id) : [...top3, p.id];
-        if (next.length > 3) return; // max 3
-        S.setTop3(today, next); onChanged(); if (!on && next.length === 3) playNotify();
-      }} className={`w-full flex items-center gap-2 min-h-[40px] px-2 py-1.5 rounded-lg border text-left transition-all ${on ? "bg-gold2 border-gold/30 text-gold" : "bg-bg2 border-line text-ink"}`}>
-        <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold shrink-0 ${on ? "border-gold bg-gold text-bg" : "border-line"}`}>{on ? "✓" : ""}</span>
-        <span className="text-[11px] font-bold flex-1 truncate">{p.title}</span>
-        {p.time && <span className="text-[9px] text-mute tnum shrink-0">{p.time}</span>}
-      </button>;
-    })}
-    {top3.length > 0 && <div className="text-[9px] text-gold font-bold">{top3.length}/3 đã chọn · Pet sẽ nhắc tập trung vào {top3.length === 3 ? "3 việc này" : "những việc đã chọn"}</div>}
+    <div className="grid grid-cols-2 gap-1 bg-bg2 p-1 rounded-lg"><button onClick={() => { setTab("places"); setAdding(false); }} className={`min-h-[34px] rounded text-[9px] font-bold ${tab === "places" ? "bg-ink text-bg" : "text-mute"}`}>Địa điểm ({places.length})</button><button onClick={() => { setTab("borrow"); setAdding(false); }} className={`min-h-[34px] rounded text-[9px] font-bold ${tab === "borrow" ? "bg-ink text-bg" : "text-mute"}`}>Cho mượn ({borrows.length})</button></div>
+    {tab === "places" && <>
+      {!adding ? <button onClick={() => setAdding(true)} className="w-full min-h-[36px] bg-ink text-bg rounded-lg text-[9px] font-bold">+ Thêm địa điểm</button> : <div className="bg-bg2 border border-line rounded-lg p-2 space-y-1.5">
+        <div className="grid grid-cols-4 gap-1">{(["food", "coffee", "play", "other"] as const).map(k => <button key={k} onClick={() => setKind(k)} className={`min-h-[32px] rounded text-[8px] font-bold ${kind === k ? "bg-ink text-bg" : "bg-card border border-line text-mute"}`}>{k === "food" ? "Ăn" : k === "coffee" ? "Cafe" : k === "play" ? "Chơi" : "Khác"}</button>)}</div>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên địa điểm" className={input} />
+        <div className="grid grid-cols-2 gap-1.5"><input value={address} onChange={e => setAddress(e.target.value)} placeholder="Địa chỉ" className={input} /><MoneyInput value={price} onChange={setPrice} placeholder="Khoảng giá" /></div>
+        <input value={best} onChange={e => setBest(e.target.value)} placeholder="Hợp đi với ai/dịp" className={input} />
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder="Món ngon/điểm hay" className={input} />
+        <input value={link} onChange={e => setLink(e.target.value)} placeholder="Link bản đồ" className={input} />
+        <div className="flex gap-1.5"><button onClick={() => { if (!name.trim()) return; S.addPlace({ name: name.trim(), kind, note: note || null, link: link || null, address: address || null, bestFor: best || null, priceRange: price || null, rating: null }); setName(""); setAddress(""); setNote(""); setBest(""); setPrice(""); setLink(""); setAdding(false); onChanged(); }} className="flex-1 min-h-[38px] bg-ink text-bg rounded text-[9px] font-bold">Lưu</button><button onClick={() => setAdding(false)} className="px-3 bg-card border border-line rounded text-[9px]">✕</button></div>
+      </div>}
+      {places.map(p => <div key={p.id} className="bg-bg2 border border-line rounded-lg overflow-hidden">
+        <button onClick={() => setExpandedPlace(expandedPlace === p.id ? null : p.id)} className="w-full px-2 py-1.5 flex items-center justify-between text-left">
+          <div className="flex-1 min-w-0"><span className="text-[10px] font-bold truncate block">{p.name}</span>{p.address && <span className="text-[9px] text-mute truncate block">{p.address}</span>}</div>
+          <span className="text-[8px] text-mute shrink-0">{expandedPlace === p.id ? "▲" : "▼"}</span>
+        </button>
+        {expandedPlace === p.id && <div className="px-2 pb-2 space-y-0.5">
+          {p.priceRange && <div className="text-[9px] text-gold">Giá: {p.priceRange}</div>}
+          {p.bestFor && <div className="text-[9px] text-blue">Hợp: {p.bestFor}</div>}
+          {p.note && <div className="text-[9px]">{p.note}</div>}
+          <div className="flex gap-1 pt-1">{p.link && <button onClick={() => window.open(p.link || "", "_blank")} className="text-[8px] text-blue">Mở bản đồ</button>}<button onClick={() => { S.deletePlace(p.id); onChanged(); }} className="text-[8px] text-mute hover:text-red ml-auto">Xóa</button></div>
+        </div>}
+      </div>)}
+    </>}
+    {tab === "borrow" && <>
+      {!adding ? <button onClick={() => setAdding(true)} className="w-full min-h-[36px] bg-ink text-bg rounded-lg text-[9px] font-bold">+ Ghi đồ cho mượn</button> : <div className="bg-bg2 border border-line rounded-lg p-2 space-y-1.5">
+        <div className="grid grid-cols-2 gap-1.5"><input value={borrower} onChange={e => setBorrower(e.target.value)} placeholder="Ai mượn" className={input} /><input value={item} onChange={e => setItem(e.target.value)} placeholder="Mượn gì" className={input} /></div>
+        <label className="text-[8px] text-mute">Cần lấy lại ngày (tùy chọn)<input type="date" value={ret} onChange={e => setRet(e.target.value)} className={input} /></label>
+        <div className="grid grid-cols-3 gap-1">{[0, 1, 2].map(p => <button key={p} onClick={() => setPriority(p)} className={`min-h-[32px] rounded text-[8px] font-bold ${priority === p ? "bg-ink text-bg" : "bg-card border border-line text-mute"}`}>{p === 0 ? "Không gấp" : p === 1 ? "Cần lại" : "Rất gấp"}</button>)}</div>
+        <input value={bNote} onChange={e => setBNote(e.target.value)} placeholder="Ghi chú" className={input} />
+        <div className="flex gap-1.5"><button onClick={() => { if (!borrower.trim() || !item.trim()) return; S.addBorrow({ borrower: borrower.trim(), item: item.trim(), lentDate: formatDate(new Date()), expectedReturn: ret || null, priority, note: bNote || null }); setBorrower(""); setItem(""); setRet(""); setBNote(""); setAdding(false); onChanged(); }} className="flex-1 min-h-[38px] bg-ink text-bg rounded text-[9px] font-bold">Lưu</button><button onClick={() => setAdding(false)} className="px-3 bg-card border border-line rounded text-[9px]">✕</button></div>
+      </div>}
+      {borrows.map(b => { const left = b.expectedReturn ? daysUntil(b.expectedReturn) : null; const urgent = (b.priority || 0) >= 2 || (left !== null && left <= 0); return <div key={b.id} className={`bg-bg2 border rounded-lg p-2 ${urgent ? "border-red/50" : "border-line"}`}>
+        <div className="flex gap-2"><div className="flex-1"><b className="text-[10px]">{b.borrower} ← {b.item}</b><div className={`text-[9px] ${(b.priority || 0) >= 2 ? "text-red font-bold" : "text-mute"}`}>{(b.priority || 0) >= 2 ? "RẤT GẤP · " : ""}{left === null ? "Chưa đặt hạn trả" : left < 0 ? `Trễ ${-left} ngày` : left === 0 ? "CẦN TRẢ HÔM NAY" : `Còn ${left} ngày`}</div>{b.note && <div className="text-[9px]">{b.note}</div>}</div><button onClick={() => { S.markBorrowReturned(b.id); onChanged(); }} className="px-2 bg-green2 text-green rounded text-[8px] font-bold shrink-0">Đã trả</button></div>
+        <div className="flex mt-1">{b.expectedReturn && <button onClick={() => { const d = prompt("Gia hạn tới (YYYY-MM-DD)", b.expectedReturn || ""); if (d) { S.extendBorrow(b.id, d); onChanged(); } }} className="text-blue text-[8px]">Gia hạn</button>}<button onClick={() => { S.deleteBorrow(b.id); onChanged(); }} className="text-mute text-[8px] ml-auto">Xóa</button></div>
+      </div>; })}
+    </>}
+  </div>;
+}
+
+// ═══ TOP 3 ═══
+export function Top3Manager({ onChanged }: { onChanged: () => void }) {
+  const today = formatDate(new Date()); const plans = S.getPlans(today).filter(p => !p.done); const top = S.getTop3(today);
+  return <div className="p-3 space-y-2"><div className="text-[10px] font-bold">Top 3 hôm nay</div>{plans.length === 0 && <div className="text-[9px] text-mute">Chưa có kế hoạch.</div>}
+    {plans.map(p => { const on = top.includes(p.id); return <button key={p.id} onClick={() => { let n = on ? top.filter(x => x !== p.id) : [...top, p.id]; if (n.length > 3) return; S.setTop3(today, n); onChanged(); if (!on && n.length === 3) playNotify(); }} className={`w-full min-h-[40px] px-2 rounded-lg border flex items-center gap-2 text-left ${on ? "bg-gold2 border-gold/30" : "bg-bg2 border-line"}`}><span className={`w-5 h-5 border-2 rounded-full flex items-center justify-center text-[9px] ${on ? "bg-gold border-gold text-bg" : "border-line"}`}>{on ? "✓" : ""}</span><span className="text-[10px] font-bold flex-1">{p.title}</span>{p.time && <span className="text-[9px] text-mute">{p.time}{p.endTime ? `–${p.endTime}` : ""}</span>}</button>; })}
+    <div className="text-[9px] text-gold">{top.length}/3 đã chọn</div>
   </div>;
 }

@@ -2140,11 +2140,7 @@ function PetAssistant() {
       if (nextAlert.length && !alertsDone.current) {
         alertsDone.current = true;
         setBubble(nextAlert[0].msg);
-        if (nextAlert[0].sound) {
-          playNotify();
-          // Rung nhẹ trên điện thoại hỗ trợ
-          if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
-        }
+        if ("vibrate" in navigator) navigator.vibrate([100, 50, 100]);
         S.markSeenKey(nextAlert[0].msg.startsWith("⚠️") ? `expiry_${keyBase}` : nextAlert[0].msg.startsWith("💳") ? `renewal_${keyBase}` : nextAlert[0].msg.startsWith("Chi") ? `spend_${keyBase}` : `borrow_${keyBase}`);
         setTimeout(() => setBubble(null), 7000);
         if (nextAlert.length > 1) setTimeout(() => { setBubble(nextAlert[1].msg); setTimeout(() => setBubble(null), 7000); }, 7500);

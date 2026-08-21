@@ -889,7 +889,7 @@ export interface RecurringItem {
   id: string; name: string; kind: "subscription" | "insurance" | "vehicle" | "bill" | "chore" | "other";
   amount: number; cycle: "daily" | "weekly" | "monthly" | "quarterly" | "yearly" | "custom";
   cycleDays: number | null; // for custom
-  nextDate: string; note: string | null; link: string | null; createdAt: string;
+  nextDate: string; endDate?: string | null; note: string | null; link: string | null; keep?: boolean; createdAt: string;
 }
 export function getRecurring(): RecurringItem[] { return load<RecurringItem>("t_recurring"); }
 export function addRecurring(r: Omit<RecurringItem, "id" | "createdAt">): RecurringItem {
@@ -969,7 +969,7 @@ export function setTop3(date: string, planIds: string[]) {
 
 // ═══ CHECKLISTS — mẫu đem đồ đi chơi/du lịch/học (key: t_checklists) ═══
 export interface ChecklistItem { id: string; name: string; checked: boolean; }
-export interface Checklist { id: string; name: string; icon: string; items: ChecklistItem[]; createdAt: string; }
+export interface Checklist { id: string; name: string; icon: string; items: ChecklistItem[]; tripDate?: string | null; remindBefore?: number; createdAt: string; }
 export function getChecklists(): Checklist[] { return load<Checklist>("t_checklists"); }
 export function addChecklist(c: Omit<Checklist, "id" | "createdAt">): Checklist {
   const all = load<Checklist>("t_checklists"); const n = { ...c, id: uid(), createdAt: new Date().toISOString() };
