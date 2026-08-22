@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as S from "@/lib/storage";
 import { fmtCurrency, fmtDateDisp, daysUntil, parseMoney, formatDate, CAT_ICONS } from "@/lib/utils";
 import { getCurrentAndNextMonthHolidays } from "@/lib/holidays";
@@ -118,33 +118,108 @@ export function ChecklistManager({ onChanged }: { onChanged: () => void }) {
 }
 
 // ═══ HOLIDAYS — theo tháng hiện tại + tháng sau ═══
+function useRealCountdown(targetDate: string) {
+  const [tl, setTl] = useState({ d: 0, h: 0, m: 0, s: 0, done: false });
+  useEffect(() => {
+    const calc = () => {
+      const diff = new Date(targetDate + "T00:00:00").getTime() - Date.now();
+      if (diff <= 0) { setTl({ d: 0, h: 0, m: 0, s: 0, done: true }); return; }
+      setTl({
+        d: Math.floor(diff / 86400000),
+        h: Math.floor((diff % 86400000) / 3600000),
+        m: Math.floor((diff % 3600000) / 60000),
+        s: Math.floor((diff % 60000) / 1000),
+        done: false,
+      });
+    };
+    calc();
+    const iv = setInterval(calc, 1000);
+    return () => clearInterval(iv);
+  }, [targetDate]);
+  return tl;
+}
+
 function FestiveCountdown({ name, daysLeft, date }: { name: string; daysLeft: number; date: string }) {
-  const isXmas = name.includes("Gi") || name.toLowerCase().includes("christmas") || name.includes("Sinh");
-  const isTet = name.includes("T") && (name.includes("Nguy") || name.includes("D"));
+  const isXmas = name.includes("Giang") || name.toLowerCase().includes("christmas") || name.includes("Sinh");
+  const isTet = name.includes("Tet") || name.includes("Nguy");
+  const tl = useRealCountdown(date);
+  void daysLeft;
+  const fmtN = (n: number) => String(n).padStart(2, "0");
+
   if (isXmas) return (
-    <div className="xmas-card rounded-xl p-3 text-white relative">
-      <div className="flex items-center justify-between relative z-10">
-        <div>
-          <div className="text-[11px] font-bold flex items-center gap-1.5"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2ed573" strokeWidth="2"><path d="M12 2v20M6 8l6-6 6 6M4 13l8-8 8 8M2 18l10-10 10 10" /></svg>Giáng Sinh</div>
-          <div className="text-[9px] opacity-80">{fmtDateDisp(date)}</div>
-        </div>
-        <div className="text-right">
-          <div className="text-2xl font-black tnum leading-none">{daysLeft < 0 ? "0" : daysLeft}</div>
-          <div className="text-[8px] opacity-70">ngày nữa</div>
+    <div className="xmas-card rounded-xl p-3 text-white relative overflow-hidden">
+      {[...Array(20)].map((_, i) => (
+        <div key={i} className="snow" style={{ width: `${2 + (i % 3)}px`, height: `${2 + (i % 3)}px`, left: `${(i * 5.2) % 100}%`, top: `-10px`, animation: `snow${(i % 4) + 1} ${1.5 + (i % 3) * 0.5}s linear ${i * 0.15}s infinite` }} />
+      ))}
+      <div className="relative z-10 flex items-center gap-2">
+        {/* Detailed Christmas Tree */}
+        <svg width="40" height="48" viewBox="0 0 40 48" className="tree-glow shrink-0" fill="none">
+          {/* Trunk */}
+          <rect x="17" y="42" width="6" height="5" rx="1" fill="#6b3410" />
+          {/* Tree body — 5 layered organic curves */}
+          <path d="M20 2C16 7 12 11 8 16c3-1 6-2 8-3-5 6-10 11-14 17 4-1 8-2 11-3-4 6-8 11-12 16h36c-4-5-8-10-12-16 3 1 7 2 11 3-4-6-9-11-14-17 2 1 5 2 8 3C28 11 24 7 20 2Z" fill="#0a3d2e" stroke="#2ed573" strokeWidth="0.8" />
+          {/* Garlands — curved lines wrapping tree */}
+          <path d="M10 16Q20 13 30 16" stroke="#2ed573" strokeWidth="0.5" fill="none" opacity="0.6" />
+          <path d="M6 24Q20 20 34 24" stroke="#2ed573" strokeWidth="0.5" fill="none" opacity="0.6" />
+          <path d="M4 33Q20 28 36 33" stroke="#2ed573" strokeWidth="0.5" fill="none" opacity="0.6" />
+          {/* Ornaments — 8 colorful balls */}
+          <circle cx="13" cy="14" r="1.5" fill="#3b82f6" className="light-blink" />
+          <circle cx="27" cy="14" r="1.5" fill="#ffd700" className="light-blink" style={{ animationDelay: ".15s" }} />
+          <circle cx="9" cy="22" r="1.8" fill="#ef4444" className="light-blink" style={{ animationDelay: ".3s" }} />
+          <circle cx="31" cy="22" r="1.5" fill="#a855f7" className="light-blink" style={{ animationDelay: ".45s" }} />
+          <circle cx="20" cy="19" r="1.3" fill="#ffd700" className="light-blink" style={{ animationDelay: ".6s" }} />
+          <circle cx="7" cy="31" r="1.5" fill="#ec4899" className="light-blink" style={{ animationDelay: ".2s" }} />
+          <circle cx="33" cy="31" r="1.8" fill="#ffd700" className="light-blink" style={{ animationDelay: ".35s" }} />
+          <circle cx="20" cy="35" r="1.5" fill="#3b82f6" className="light-blink" style={{ animationDelay: ".5s" }} />
+          {/* Star on top */}
+          <path d="M20 0l1.5 4 4-0.5-2.5 3 1.5 4-4-1.5-4 1.5 1.5-4-2.5-3 4 0.5z" fill="#ffd700" className="light-blink" />
+          <circle cx="20" cy="3" r="1" fill="#fff" className="light-blink" style={{ animationDelay: ".1s" }} />
+        </svg>
+        <div className="flex-1 text-center">
+          <div className="xmas-title text-[14px]">Giang Sinh</div>
+          {tl.done ? <div className="xmas-num text-xl">HOM NAY!</div> : (
+            <div className="flex justify-center items-baseline gap-1 mt-0.5">
+              <span className="xmas-num text-xl">{tl.d}</span><span className="text-[8px] text-green-200/50">ng</span>
+              <span className="text-[12px] tnum">{fmtN(tl.h)}</span><span className="text-[8px] text-green-200/50">h</span>
+              <span className="text-[12px] tnum">{fmtN(tl.m)}</span><span className="text-[8px] text-green-200/50">p</span>
+              <span className="text-[12px] tnum a-blink">{fmtN(tl.s)}</span><span className="text-[8px] text-green-200/50">s</span>
+            </div>
+          )}
+          <div className="text-[8px] text-green-200/40 mt-0.5">{fmtDateDisp(date)}</div>
         </div>
       </div>
     </div>
   );
+
   if (isTet) return (
-    <div className="tet-card rounded-xl p-3 text-white relative">
-      <div className="flex items-center justify-between relative z-10">
-        <div>
-          <div className="text-[11px] font-bold flex items-center gap-1.5 lantern-float"><svg width="16" height="16" viewBox="0 0 24 24" fill="#ffd700"><circle cx="12" cy="12" r="8" /><rect x="10" y="2" width="4" height="4" rx="1" /><rect x="10" y="18" width="4" height="4" rx="1" /></svg>Tết Nguyên Đán</div>
-          <div className="text-[9px] opacity-80">{fmtDateDisp(date)}</div>
-        </div>
-        <div className="text-right">
-          <div className="text-2xl font-black tnum leading-none text-yellow-300">{daysLeft < 0 ? "0" : daysLeft}</div>
-          <div className="text-[8px] opacity-70">ngày nữa</div>
+    <div className="tet-card rounded-xl p-3 text-white relative overflow-hidden">
+      <svg className="firework fw1" viewBox="0 0 36 36"><g fill="#ffd700"><circle cx="18" cy="18" r="1.5"/><circle cx="18" cy="4" r="1"/><circle cx="18" cy="32" r="1"/><circle cx="4" cy="18" r="1"/><circle cx="32" cy="18" r="1"/><circle cx="8" cy="8" r=".8"/><circle cx="28" cy="28" r=".8"/></g><g stroke="#ffd700" strokeWidth=".8" fill="none"><line x1="18" y1="6" x2="18" y2="12"/><line x1="18" y1="24" x2="18" y2="30"/><line x1="6" y1="18" x2="12" y2="18"/><line x1="24" y1="18" x2="30" y2="18"/></g></svg>
+      <svg className="firework fw2" viewBox="0 0 28 28"><g fill="#ff6b6b"><circle cx="14" cy="14" r="1"/><circle cx="14" cy="3" r=".8"/><circle cx="14" cy="25" r=".8"/><circle cx="3" cy="14" r=".8"/><circle cx="25" cy="14" r=".8"/></g></svg>
+      <svg className="firework fw3" viewBox="0 0 24 24"><g fill="#fff"><circle cx="12" cy="12" r=".8"/><circle cx="12" cy="2" r=".6"/><circle cx="12" cy="22" r=".6"/><circle cx="2" cy="12" r=".6"/><circle cx="22" cy="12" r=".6"/></g></svg>
+      <div className="relative z-10 flex items-center gap-2">
+        <svg width="30" height="38" viewBox="0 0 40 48" className="lantern-sway shrink-0" fill="none">
+          <line x1="20" y1="0" x2="20" y2="5" stroke="#ffd700" strokeWidth="1.5"/>
+          <path d="M12 5Q20 2 28 5L26 9Q20 7 14 9Z" fill="#ffd700"/>
+          <ellipse cx="20" cy="24" rx="14" ry="16" fill="#dc2626"/>
+          <ellipse cx="20" cy="24" rx="14" ry="16" fill="none" stroke="#ffd700" strokeWidth="1.5"/>
+          <path d="M8 18Q20 16 32 18" stroke="#ffd700" strokeWidth=".6" fill="none" opacity=".5"/>
+          <path d="M7 24Q20 22 33 24" stroke="#ffd700" strokeWidth=".6" fill="none" opacity=".5"/>
+          <path d="M8 30Q20 32 32 30" stroke="#ffd700" strokeWidth=".6" fill="none" opacity=".5"/>
+          <path d="M14 39Q20 41 26 39L28 43Q20 45 12 43Z" fill="#ffd700"/>
+          <line x1="20" y1="43" x2="20" y2="48" stroke="#ffd700" strokeWidth="1"/>
+          <circle cx="20" cy="48" r="1.5" fill="#ffd700"/>
+        </svg>
+        <div className="flex-1 text-center">
+          <div className="tet-title gold-shimmer text-[14px]">Tet Nguyen Dan</div>
+          {tl.done ? <div className="tet-num gold-shimmer text-xl">HOM NAY!</div> : (
+            <div className="flex justify-center items-baseline gap-1 mt-0.5">
+              <span className="tet-num gold-shimmer text-xl">{tl.d}</span><span className="text-[8px] text-yellow-200/50">ng</span>
+              <span className="text-[12px] tnum">{fmtN(tl.h)}</span><span className="text-[8px] text-yellow-200/50">h</span>
+              <span className="text-[12px] tnum">{fmtN(tl.m)}</span><span className="text-[8px] text-yellow-200/50">p</span>
+              <span className="text-[12px] tnum a-blink">{fmtN(tl.s)}</span><span className="text-[8px] text-yellow-200/50">s</span>
+            </div>
+          )}
+          <div className="text-[8px] text-yellow-200/40 mt-0.5">{fmtDateDisp(date)}</div>
         </div>
       </div>
     </div>

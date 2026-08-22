@@ -2071,11 +2071,11 @@ function PetAssistant() {
   const allRem = S.getReminders().filter(r => !r.seen).sort((a, b) => a.remindAt.localeCompare(b.remindAt));
   const todayRem = S.getActiveReminders();
   const managerAlerts = [
-    ...(S.getExpiringWithin(1).length > 0 ? [{ n: S.getExpiringWithin(1).length, t: "han", l: "han" }] : []),
-    ...(S.getRecurringDueWithin(2).length > 0 ? [{ n: S.getRecurringDueWithin(2).length, t: "gia han", l: "renewal" }] : []),
-    ...(S.getOverdueBorrows(30).length > 0 ? [{ n: S.getOverdueBorrows(30).length, t: "muon", l: "others" }] : []),
-    ...(S.getChecklists().filter(cl => cl.items.length > 0 && cl.items.some(i => !i.checked)).length > 0 ? [{ n: 1, t: "checklist", l: "checklist" }] : []),
-    ...((S.getSpendAnomaly()?.ratio || 0) >= 3 ? [{ n: 1, t: "chi bat thuong", l: "stats" }] : []),
+    ...(S.getExpiringWithin(1).length > 0 ? [{ n: S.getExpiringWithin(1).length, t: "Hết hạn", l: "expiry" }] : []),
+    ...(S.getRecurringDueWithin(2).length > 0 ? [{ n: S.getRecurringDueWithin(2).length, t: "Gia hạn", l: "renewal" }] : []),
+    ...(S.getOverdueBorrows(30).length > 0 ? [{ n: S.getOverdueBorrows(30).length, t: "Cho mượn", l: "others" }] : []),
+    ...(S.getChecklists().filter(cl => cl.items.length > 0 && cl.items.some(i => !i.checked)).length > 0 ? [{ n: 1, t: "Checklist", l: "checklist" }] : []),
+    ...((S.getSpendAnomaly()?.ratio || 0) >= 3 ? [{ n: 1, t: "Chi bất thường", l: "stats" }] : []),
   ];
   const managerAlertCount = managerAlerts.reduce((s, a) => s + a.n, 0);
   const nextAlert = useMemo(() => {

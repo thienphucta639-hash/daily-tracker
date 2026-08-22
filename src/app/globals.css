@@ -39,17 +39,83 @@ body {
 
 #app-scroll { position: fixed; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
-.xmas-card { background: linear-gradient(135deg, #0d4f3c 0%, #1a6b54 40%, #b91c1c 100%); position: relative; overflow: hidden; }
-.xmas-card::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(circle at 20% 30%, rgba(255,255,255,0.12) 1px, transparent 1.5px), radial-gradient(circle at 70% 60%, rgba(255,255,255,0.08) 1px, transparent 1.5px); background-size: 30px 30px, 40px 40px; pointer-events: none; }
+/* ═══ CHRISTMAS ═══ */
+.xmas-card {
+  background: linear-gradient(170deg, #051a13 0%, #0a3d2e 20%, #0d4f3c 35%, #1a6b54 50%, #2d5a3d 65%, #7f1d1d 100%);
+  position: relative; overflow: hidden; border: 1px solid rgba(46,213,115,0.4);
+}
+.xmas-card::after {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(46,213,115,0.2), transparent 70%);
+  pointer-events: none;
+}
+.xmas-card::before {
+  content: ""; position: absolute; inset: 0;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(255,255,255,0.15) 1px, transparent 2px),
+    radial-gradient(circle at 45% 50%, rgba(255,255,255,0.1) 1px, transparent 2px),
+    radial-gradient(circle at 75% 25%, rgba(255,255,255,0.12) 1px, transparent 2px),
+    radial-gradient(circle at 85% 70%, rgba(255,255,255,0.08) 1px, transparent 2px),
+    radial-gradient(circle at 25% 80%, rgba(255,255,255,0.1) 1px, transparent 2px);
+  background-size: 40px 40px, 35px 35px, 50px 50px, 30px 30px, 45px 45px;
+  pointer-events: none;
+}
+@keyframes snow1 { 0% { transform: translate(0,-15px); opacity: 0; } 5% { opacity: 1; } 100% { transform: translate(-12px,110px); opacity: 0; } }
+@keyframes snow2 { 0% { transform: translate(0,-15px); opacity: 0; } 5% { opacity: 1; } 100% { transform: translate(10px,110px); opacity: 0; } }
+@keyframes snow3 { 0% { transform: translate(0,-15px); opacity: 0; } 5% { opacity: 0.9; } 100% { transform: translate(-5px,110px); opacity: 0; } }
+@keyframes snow4 { 0% { transform: translate(0,-15px); opacity: 0; } 5% { opacity: 0.7; } 100% { transform: translate(3px,110px); opacity: 0; } }
+.snow { position: absolute; background: white; border-radius: 50%; pointer-events: none; filter: blur(0.3px); }
+@keyframes treeGlow { 0%,100% { filter: drop-shadow(0 0 3px #2ed573) drop-shadow(0 0 1px #fff); } 50% { filter: drop-shadow(0 0 12px #2ed573) drop-shadow(0 0 5px #fff); } }
+.tree-glow { animation: treeGlow 2.5s ease-in-out infinite; }
+@keyframes lightBlink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+.light-blink { animation: lightBlink 0.8s ease-in-out infinite; }
+.xmas-title {
+  font-family: Georgia, "Times New Roman", serif; font-weight: 700;
+  text-shadow: 0 0 10px rgba(46,213,115,0.9), 0 0 20px rgba(255,255,255,0.3);
+}
+.xmas-num {
+  font-family: Georgia, serif; font-weight: 900;
+  text-shadow: 0 0 15px rgba(46,213,115,0.7), 0 0 30px rgba(255,255,255,0.2);
+}
 
-.tet-card { background: linear-gradient(135deg, #b91c1c 0%, #dc2626 50%, #f59e0b 100%); position: relative; overflow: hidden; }
-.tet-card::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,215,0,0.06) 20px, rgba(255,215,0,0.06) 21px); pointer-events: none; }
-
-@keyframes snowfall { 0% { transform: translateY(-10px); opacity: 0; } 10% { opacity: 0.8; } 90% { opacity: 0.5; } 100% { transform: translateY(50px); opacity: 0; } }
-.snow-dot { position: absolute; width: 3px; height: 3px; background: white; border-radius: 50%; pointer-events: none; }
-
-@keyframes lanternFloat { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-3px) rotate(2deg); } }
-.lantern-float { animation: lanternFloat 2.5s ease-in-out infinite; }
+/* ═══ TET ═══ */
+.tet-card {
+  background: linear-gradient(170deg, #5c0e0e 0%, #991b1b 20%, #b91c1c 35%, #dc2626 55%, #ea580c 75%, #f59e0b 100%);
+  position: relative; overflow: hidden; border: 1px solid rgba(255,215,0,0.4);
+}
+.tet-card::after {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 70% 60% at 30% 100%, rgba(255,215,0,0.25), transparent 60%);
+  pointer-events: none;
+}
+.tet-card::before {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(135deg, transparent, transparent 12px, rgba(255,215,0,0.04) 12px, rgba(255,215,0,0.04) 13px),
+    repeating-linear-gradient(45deg, transparent, transparent 15px, rgba(255,100,0,0.03) 15px, rgba(255,100,0,0.03) 16px);
+  pointer-events: none;
+}
+@keyframes firework1 { 0% { transform: scale(0) rotate(0); opacity: 0; } 10% { opacity: 1; } 80% { opacity: 0.5; } 100% { transform: scale(2) rotate(45deg); opacity: 0; } }
+@keyframes firework2 { 0% { transform: scale(0) rotate(0); opacity: 0; } 15% { opacity: 1; } 75% { opacity: 0.4; } 100% { transform: scale(2.2) rotate(-30deg); opacity: 0; } }
+@keyframes firework3 { 0% { transform: scale(0) rotate(0); opacity: 0; } 20% { opacity: 0.9; } 70% { opacity: 0.3; } 100% { transform: scale(1.8) rotate(60deg); opacity: 0; } }
+.firework { position: absolute; pointer-events: none; }
+.fw1 { top: 3px; right: 8px; width: 36px; height: 36px; animation: firework1 2.2s ease-out infinite; }
+.fw2 { top: 18px; right: 30px; width: 28px; height: 28px; animation: firework2 2.8s ease-out 0.4s infinite; }
+.fw3 { top: 8px; right: 50px; width: 24px; height: 24px; animation: firework3 3.2s ease-out 0.8s infinite; }
+@keyframes lanternSway { 0%,100% { transform: translateY(0) rotate(-5deg); } 50% { transform: translateY(-5px) rotate(5deg); } }
+.lantern-sway { animation: lanternSway 1.8s ease-in-out infinite; transform-origin: top center; }
+@keyframes goldShimmer { 0%,100% { color: #ffd700; text-shadow: 0 0 8px rgba(255,215,0,0.5); } 33% { color: #ffec80; text-shadow: 0 0 12px rgba(255,215,0,0.7); } 66% { color: #ffb347; text-shadow: 0 0 10px rgba(255,180,71,0.5); } }
+.gold-shimmer { animation: goldShimmer 2s ease-in-out infinite; }
+.tet-title {
+  font-weight: 900;
+  text-shadow: 0 0 10px rgba(255,215,0,0.7), 0 0 20px rgba(255,100,0,0.3);
+  letter-spacing: 1px;
+}
+.tet-num {
+  font-weight: 900;
+  text-shadow: 0 0 15px rgba(255,215,0,0.6), 0 0 30px rgba(255,100,0,0.3);
+}
+@keyframes goldShimmer { 0%,100% { color: #ffd700; } 50% { color: #fff5b0; } }
+.gold-shimmer { animation: goldShimmer 2s ease-in-out infinite; }
 
 input, textarea, select {
   font-family: inherit;
