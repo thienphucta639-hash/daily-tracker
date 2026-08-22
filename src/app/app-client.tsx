@@ -10,9 +10,9 @@ import * as S from "@/lib/storage";
 import { migrateTimezone } from "@/lib/migrate";
 import { migrateImages, resolveImage, saveImage } from "@/lib/imgdb";
 import FinanceTools from "./finance-tools";
-import { ExpiryManager, RecurringManager, OthersManager, Top3Manager, ChecklistManager, HolidaysManager, playNotify } from "./pet-manager";
+import { ExpiryManager, RecurringManager, OthersManager, Top3Manager, ChecklistManager, HolidaysManager, FestiveCountdown, ThemedCountdown, playNotify } from "./pet-manager";
 import { fmtCompact, daysUntil } from "@/lib/utils";
-import { getUpcomingHolidays } from "@/lib/holidays";
+import { getUpcomingHolidays, SPECIAL_HOLIDAYS, getSpecialHolidayDate } from "@/lib/holidays";
 
 /* ═══ ICONS — 100% custom SVG, zero emoji system ═══ */
 function Ic({ d, size = 18, sw = 1.8, cls }: { d: string; size?: number; sw?: number; cls?: string }) {
@@ -69,6 +69,8 @@ export default function App() {
   const [liveR, setLiveR] = useState<S.LiveTrack[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [modal, setModal] = useState<string | null>(null);
+  const [showMonthReport, setShowMonthReport] = useState<S.MonthReport | null>(null);
+  const [festiveMain, setFestiveMain] = useState<string[]>([]);
   const [col, setCol] = useState<Record<string, boolean>>({ me: true, e: true });
   const [img, setImg] = useState<string | null>(null);
   const [streak, setStreak] = useState(0);
@@ -99,7 +101,7 @@ export default function App() {
     setStatus(S.getDailyStatus(date));
     const sv2 = S.getStreakV2(); setStreak(sv2.currentStreak); setStreakBroken(sv2.brokenAt);
     const l = S.getLiveTracks();
-    setLive(l.active);
+    setLive(l.active); setFestiveMain(S.getFestiveMain());
     // Only show tracked sessions that belong to the currently viewed date
     setLiveR(l.recent.filter(r => formatDate(new Date(r.startedAt)) === date));
     setHabits(S.getHabitsForDate(date)); setHabitChecks(S.getHabitChecks(date));
@@ -115,6 +117,18 @@ export default function App() {
     migrateImages().then(() => {
       setTimeout(() => setOk(true), 2000);
     }).catch(() => setTimeout(() => setOk(true), 2000));
+    // Monthly report at start of new month
+    const now = new Date();
+    const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const lastReport = S.getLastReportMonth();
+    if (lastReport && lastReport !== curMonth) {
+      const [ly, lm] = lastReport.split("-").map(Number);
+      const report = S.getMonthReport(ly, lm);
+      if (report.totalSpent > 0) setTimeout(() => setShowMonthReport(report), 2500);
+      S.setLastReportMonth(curMonth);
+    } else if (!lastReport) {
+      S.setLastReportMonth(curMonth);
+    }
   }, []);
   useEffect(() => { if (ok) reload(); }, [ok, reload]);
 
@@ -419,6 +433,30 @@ export default function App() {
 
         {tab === "main" ? (
           <>
+            {/* Pinned festive countdowns — from Lễ tab */}
+            {festiveMain.length > 0 && (
+              <div className={`grid ${festiveMain.length === 1 ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-3"} gap-1.5`}>
+                {festiveMain.map(key => {
+                  const sh = SPECIAL_HOLIDAYS.find(s => s.key === key);
+                  const info = getSpecialHolidayDate(key);
+                  if (!info || !sh) return null;
+                  return <div key={key} className="relative">
+                    <ThemedCountdown theme={sh.theme} name={info.name} daysLeft={info.daysLeft} date={info.date} />
+                    <button onClick={() => { S.toggleFestiveMain(key); reload(); }} title="Bo khoi track chinh" className="absolute top-1 right-1 w-5 h-5 bg-black/40 hover:bg-red text-white rounded-full flex items-center justify-center text-[9px] z-20">✕</button>
+                  </div>;
+                })}
+              </div>
+            )}
+            {/* Daily spending warning > 150k */}
+            {isToday && totExp > 150000 && (
+              <div className="bg-red/10 border border-red/30 rounded-xl px-3 py-2 flex items-center gap-2 a-rise">
+                <Ic d={P.alert} size={16} cls="text-red shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-[11px] font-bold text-red">Da chi {fmtCompact(totExp)} hom nay</span>
+                  <span className="text-[10px] text-mute block">Vuot muc 150k/ngay — can than chi tieu them!</span>
+                </div>
+              </div>
+            )}
             {/* LIVE */}
             {isToday && (
               <div className="a-rise">
@@ -724,7 +762,45 @@ export default function App() {
       {modal === "addSchedule" && <AddScheduleModal date={date} onDone={() => { reload(); setModal(null); }} onClose={() => setModal(null)} />}
 
       {/* PET ASSISTANT */}
-      <PetAssistant />
+      <PetAssistant onMainReload={reload} />
+
+      {/* MONTHLY REPORT */}
+      {showMonthReport && (
+        <div className="fixed inset-0 bg-bg/90 backdrop-blur z-50 flex items-end sm:items-center justify-center p-3" onClick={() => setShowMonthReport(null)}>
+          <div onClick={e => e.stopPropagation()} className="bg-card border border-line rounded-2xl p-4 max-w-sm w-full max-h-[80vh] overflow-y-auto a-rise">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="font-bold text-base">Bao cao thang truoc</h2>
+                <p className="text-[10px] text-mute">{(() => { const [y, m] = showMonthReport.month.split("-"); const months = ["", "Thang 1","Thang 2","Thang 3","Thang 4","Thang 5","Thang 6","Thang 7","Thang 8","Thang 9","Thang 10","Thang 11","Thang 12"]; return `${months[parseInt(m)]} ${y}`; })()}</p>
+              </div>
+              <button onClick={() => setShowMonthReport(null)} className="w-8 h-8 rounded-lg bg-bg2 flex items-center justify-center text-mute"><Ic d={P.x} size={14} /></button>
+            </div>
+            <div className="text-center mb-3 py-3 bg-red/5 rounded-xl">
+              <div className="text-[10px] text-mute font-bold uppercase">Tong chi</div>
+              <div className="text-3xl font-black text-red tnum">{fmtCompact(showMonthReport.totalSpent)}</div>
+              <div className="text-[10px] text-mute">TB {fmtCompact(showMonthReport.avgPerDay)}/ngay · {showMonthReport.dayCount} ngay co chi</div>
+            </div>
+            {showMonthReport.daysOverLimit.length > 0 && (
+              <div className="bg-red/5 border border-red/20 rounded-lg p-2 mb-3">
+                <div className="text-[10px] font-bold text-red mb-1 flex items-center gap-1"><Ic d={P.alert} size={12} /> {showMonthReport.daysOverLimit.length} ngay vuot 150k</div>
+                {showMonthReport.daysOverLimit.slice(0, 5).map(d => <div key={d.date} className="text-[10px] text-mute flex justify-between"><span>{fmtDateDisp(d.date)}</span><span className="text-red font-bold tnum">{fmtCompact(d.total)}</span></div>)}
+              </div>
+            )}
+            <div className="text-[9px] font-bold text-mute uppercase mb-1.5">Theo danh muc</div>
+            <div className="space-y-1">
+              {showMonthReport.categoryBreakdown.map(cat => {
+                const ec = EXPS.find(x => x.value === cat.category);
+                const pct = showMonthReport.totalSpent > 0 ? Math.round(cat.total / showMonthReport.totalSpent * 100) : 0;
+                return <div key={cat.category}>
+                  <div className="flex items-center justify-between text-[10px] mb-0.5"><span className="flex items-center gap-1"><CI cat={cat.category} size={11} /> {ec?.label || cat.category}</span><span className="font-bold tnum">{fmtCompact(cat.total)}</span></div>
+                  <div className="h-1 bg-bg2 rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} /></div>
+                </div>;
+              })}
+            </div>
+            <button onClick={() => setShowMonthReport(null)} className="w-full mt-4 py-2.5 bg-ink text-bg rounded-xl font-bold text-sm">Da xem</button>
+          </div>
+        </div>
+      )}
 
       {/* IMAGE VIEWER */}
       {img && (
@@ -810,18 +886,9 @@ function ensureAlarmAudio() {
   return alarmAudio;
 }
 
-// Warm up audio on first user interaction (needed for iOS)
+// Warm up audio context only (NO play — prevents beep on open)
 if (typeof window !== "undefined") {
-  const warmUp = () => {
-    try {
-      getAudioCtx();
-      const a = ensureAlarmAudio();
-      a.volume = 0;
-      a.play().then(() => { a.pause(); a.currentTime = 0; a.volume = 1; }).catch(() => {});
-    } catch {}
-    window.removeEventListener("touchstart", warmUp);
-    window.removeEventListener("click", warmUp);
-  };
+  const warmUp = () => { try { getAudioCtx(); } catch {} };
   window.addEventListener("touchstart", warmUp, { once: true });
   window.addEventListener("click", warmUp, { once: true });
 }
@@ -1126,7 +1193,7 @@ function MealModal({ date, onDone, onClose }: { date: string; onDone: () => void
       {/* Step 1: Meal type + name + photo + time */}
       <div className="flex gap-1 mb-2">{MEALS.map(m => (<button key={m.value} onClick={() => setMt(m.value)} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all min-h-[40px] flex flex-col items-center justify-center gap-0.5 ${mt === m.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={m.value} size={16} />{m.label}</button>))}</div>
       <ImgP value={im} onChange={setIm} />
-      <input type="text" value={fn} onChange={e => setFn(e.target.value)} placeholder="Tên món" autoFocus className={`${ic} mb-2`} />
+      <input type="text" value={fn} onChange={e => setFn(e.target.value)} placeholder="Tên món" className={`${ic} mb-2`} />
       <input type="time" value={tm} onChange={e => setTm(e.target.value)} className={`${ic} mb-2 min-h-[44px]`} />
       <div className="flex gap-2">
         <button onClick={doSave} disabled={!fn.trim()} className="flex-1 py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98] min-h-[48px]">Thêm nhanh</button>
@@ -1218,7 +1285,7 @@ function ActModal({ date, onDone, onClose }: { date: string; onDone: () => void;
   const [cat, setCat] = useState("work"); const [ti, setTi] = useState(""); const [dur, setDur] = useState(""); const [st, setSt] = useState("");
   return (<Wrap title="Thêm hoạt động" onClose={onClose}>
     <div className="flex flex-wrap gap-1 mb-2.5">{ACTS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2.5 py-1.5 rounded-md text-[10px] font-semibold transition-all flex items-center gap-1 ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={12} /> {c.label}</button>))}</div>
-    <input type="text" value={ti} onChange={e => setTi(e.target.value)} placeholder="Hoạt động" autoFocus className={`${ic} mb-2`} />
+    <input type="text" value={ti} onChange={e => setTi(e.target.value)} placeholder="Hoạt động" className={`${ic} mb-2`} />
     <div className="flex gap-1.5 mb-2.5"><input type="time" value={st} onChange={e => setSt(e.target.value)} className={`${ic} flex-1`} /><input type="number" value={dur} onChange={e => setDur(e.target.value)} placeholder="Phút" className={`${ic} flex-1`} /></div>
     <button onClick={() => { if (!ti.trim()) return; S.addActivity({ date, category: cat, title: ti.trim(), description: null, durationMinutes: dur ? parseInt(dur) : null, startTime: st || null, endTime: null }); onDone(); }} disabled={!ti.trim()} className="w-full py-2.5 rounded-lg bg-ink text-bg font-bold disabled:opacity-30 active:scale-[0.98]">Thêm</button>
   </Wrap>);
@@ -1250,7 +1317,7 @@ function ExpModal({ date, onDone, onClose }: { date: string; onDone: () => void;
     )}
     <div className="flex flex-wrap gap-1 mb-2.5">{EXPS.map(c => (<button key={c.value} onClick={() => setCat(c.value)} className={`px-2.5 py-1.5 rounded-md text-[10px] font-semibold transition-all flex items-center gap-1 ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={12} /> {c.label}</button>))}</div>
     <ImgP value={im} onChange={setIm} />
-    <input type="text" value={ds} onChange={e => setDs(e.target.value)} placeholder="Mô tả" autoFocus className={`${ic} mb-2`} />
+    <input type="text" value={ds} onChange={e => setDs(e.target.value)} placeholder="Mô tả" className={`${ic} mb-2`} />
     <div className="mb-2"><MoneyIn value={am} onChange={setAm} placeholder="Số tiền" /></div>
     {p != null && p > 0 && <PaymentPicker method={paymentMethod} setMethod={setPaymentMethod} accountId={accountId} setAccountId={setAccountId} />}
     {/* Save as preset */}
@@ -1664,7 +1731,7 @@ function AddPlanModal({ date, onDone, onClose }: { date: string; onDone: () => v
       {/* Step 1: user-defined plan only */}
       <div className="text-[9px] text-mute font-bold mb-1">Chọn loại kế hoạch (tối đa 8 icon):</div>
       <div className="grid grid-cols-4 gap-1.5 mb-2.5">{ACTS.slice(0, 8).map(c => (<button type="button" key={c.value} onClick={() => setCat(c.value)} className={`flex flex-col items-center justify-center py-2 rounded-lg text-[8px] font-bold min-h-[48px] transition-all ${cat === c.value ? "bg-ink text-bg" : "bg-bg2 text-mute border border-line"}`}><CI cat={c.value} size={15} />{c.label}</button>))}</div>
-      <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề" autoFocus className={`${ic} mb-2`} />
+      <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Tiêu đề" className={`${ic} mb-2`} />
       <div className="grid grid-cols-2 gap-1.5 mb-2">
         <label className="text-[9px] text-mute font-bold">Bắt đầu<input type="time" value={time} onChange={e => setTime(e.target.value)} className={`${ic} mt-0.5 min-h-[44px]`} /></label>
         <label className="text-[9px] text-mute font-bold">Kết thúc (tùy chọn)<input type="time" value={endTime} min={time || undefined} onChange={e => setEndTime(e.target.value)} className={`${ic} mt-0.5 min-h-[44px]`} /></label>
@@ -1747,7 +1814,7 @@ function AddScheduleModal({ date, onDone, onClose }: { date: string; onDone: () 
   const canSave = name.trim() && blocks.some(b => b.title.trim());
 
   return (<Wrap title="Tạo thời khóa biểu" onClose={onClose}>
-    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên thời khóa biểu" autoFocus className={`${ic} mb-2.5`} />
+    <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Tên thời khóa biểu" className={`${ic} mb-2.5`} />
     <div className="space-y-2 mb-2.5 max-h-[40vh] overflow-y-auto">
       {blocks.map((b, i) => (
         <div key={i} className="bg-bg2 rounded-lg p-2 border border-line space-y-1.5">
@@ -2056,7 +2123,7 @@ const PET_TALKS = [
   "Kế hoạch chỉ hữu ích khi cụ thể: việc gì, lúc nào và kết quả mong muốn.",
 ];
 
-function PetAssistant() {
+function PetAssistant({ onMainReload }: { onMainReload?: () => void }) {
   const [bubble, setBubble] = useState<string | null>(null);
   const [bubbleTab, setBubbleTab] = useState<"remind" | "stats" | "expiry" | "renewal" | "others" | "top3" | "checklist" | "holiday" | null>(null);
   const [board, setBoard] = useState(false);
@@ -2083,6 +2150,12 @@ function PetAssistant() {
     const keyBase = formatDate(new Date());
     type PetTab = "remind" | "stats" | "expiry" | "renewal" | "others" | "top3" | "checklist" | "holiday";
     const out: { key: string; msg: string; sound: boolean; tab: PetTab }[] = [];
+    // Holiday auto-reminders: 14 days, 7 days, 3 days before
+    SPECIAL_HOLIDAYS.forEach(sh => {
+      const info = getSpecialHolidayDate(sh.key); if (!info) return;
+      const rk = info.daysLeft <= 3 ? `hol3_${sh.key}_${keyBase}` : info.daysLeft <= 7 ? `hol7_${sh.key}_${keyBase}` : info.daysLeft <= 14 ? `hol14_${sh.key}_${keyBase}` : null;
+      if (rk && !S.getSeenKey(rk)) out.push({ key: rk, msg: `${info.name} con ${info.daysLeft} ngay! Bam "Le".`, sound: info.daysLeft <= 3, tab: "holiday" });
+    });
     const ex = S.getExpiringWithin(1);
     if (ex.length && !S.getSeenKey(`expiry_${keyBase}`)) out.push({ key: `expiry_${keyBase}`, tab: "expiry", msg: `⚠️ ${ex.length} thứ sắp hết hạn: ${ex.map(x => x.name).join(", ")}`, sound: true });
     const du = S.getRecurringDueWithin(2);
@@ -2395,7 +2468,7 @@ function PetAssistant() {
             {boardTab === "checklist" && <ChecklistManager onChanged={petRefresh} />}
 
             {/* Tab: Lễ */}
-            {boardTab === "holiday" && <HolidaysManager onChanged={petRefresh} />}
+            {boardTab === "holiday" && <HolidaysManager onChanged={() => { petRefresh(); onMainReload?.(); }} />}
 
             {/* Tab: Khác */}
             {boardTab === "others" && <OthersManager onChanged={petRefresh} />}

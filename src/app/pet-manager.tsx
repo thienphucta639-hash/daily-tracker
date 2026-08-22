@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import * as S from "@/lib/storage";
 import { fmtCurrency, fmtDateDisp, daysUntil, parseMoney, formatDate, CAT_ICONS } from "@/lib/utils";
-import { getCurrentAndNextMonthHolidays } from "@/lib/holidays";
+import { getCurrentAndNextMonthHolidays, SPECIAL_HOLIDAYS, getSpecialHolidayDate } from "@/lib/holidays";
 
 const input = "w-full px-2.5 py-2 rounded-lg bg-bg2 border border-line text-[11px] outline-none focus:border-ink min-h-[40px]";
 
@@ -139,7 +139,7 @@ function useRealCountdown(targetDate: string) {
   return tl;
 }
 
-function FestiveCountdown({ name, daysLeft, date }: { name: string; daysLeft: number; date: string }) {
+export function FestiveCountdown({ name, daysLeft, date }: { name: string; daysLeft: number; date: string }) {
   const isXmas = name.includes("Giang") || name.toLowerCase().includes("christmas") || name.includes("Sinh");
   const isTet = name.includes("Tet") || name.includes("Nguy");
   const tl = useRealCountdown(date);
@@ -227,6 +227,60 @@ function FestiveCountdown({ name, daysLeft, date }: { name: string; daysLeft: nu
   return null;
 }
 
+const THEMES: Record<string, { bg: string; accent: string; label: string; emoji?: string }> = {
+  xmas: { bg: "xmas-card", accent: "#2ed573", label: "Giang Sinh", emoji: "🎄" },
+  tet: { bg: "tet-card", accent: "#ffd700", label: "Tet Nguyen Dan", emoji: "🏮" },
+  women: { bg: "holiday-women", accent: "#f0abfc", label: "Quoc Te Phu Nu", emoji: "🌸" },
+  love: { bg: "holiday-love", accent: "#fda4af", label: "Le Tinh Nhan", emoji: "❤️" },
+  vnwomen: { bg: "holiday-vnwomen", accent: "#d8b4fe", label: "Phu Nu Viet Nam", emoji: "🌺" },
+  teacher: { bg: "holiday-teacher", accent: "#fde68a", label: "Nha Giao", emoji: "📚" },
+};
+
+export function ThemedCountdown({ theme, name, daysLeft, date }: { theme: string; name: string; daysLeft: number; date: string }) {
+  const t = THEMES[theme] || THEMES.xmas;
+  const tl = useRealCountdown(date);
+  const fmtN = (n: number) => String(n).padStart(2, "0");
+  const isXmas = theme === "xmas", isTet = theme === "tet";
+  const isThemed = !isXmas && !isTet;
+  return (
+    <div className={`rounded-xl p-2.5 text-white relative overflow-hidden ${isXmas ? "xmas-card" : isTet ? "tet-card" : isThemed ? t.bg : ""}`}>
+      {isXmas && [...Array(15)].map((_, i) => <div key={i} className="snow" style={{ width: `${2+(i%3)}px`, height: `${2+(i%3)}px`, left: `${(i*6.8)%100}%`, top: `-10px`, animation: `snow${(i%4)+1} ${1.5+(i%3)*.5}s linear ${i*.15}s infinite` }} />)}
+      <div className="relative z-10 text-center">
+        <div className="text-[12px] font-bold mb-0.5" style={{ textShadow: `0 0 8px ${t.accent}80` }}>{t.emoji} {t.label}</div>
+        {tl.done ? <div className="text-base font-black text-yellow-200">HOM NAY!</div> : (
+          <div className="flex justify-center items-baseline gap-0.5">
+            <span className="text-lg font-black leading-none" style={{ textShadow: `0 0 10px ${t.accent}60` }}>{tl.d}</span><span className="text-[7px] opacity-60">ng</span>
+            <span className="text-[11px] tnum leading-none">{fmtN(tl.h)}</span><span className="text-[7px] opacity-60">h</span>
+            <span className="text-[11px] tnum leading-none">{fmtN(tl.m)}</span><span className="text-[7px] opacity-60">p</span>
+            <span className="text-[11px] tnum a-blink leading-none">{fmtN(tl.s)}</span><span className="text-[7px] opacity-60">s</span>
+          </div>
+        )}
+        <div className="text-[7px] opacity-40 mt-0.5">{fmtDateDisp(date)}</div>
+      </div>
+    </div>
+  );
+}
+
+function GiftSection({ holidayKey, onChanged }: { holidayKey: string; onChanged: () => void }) {
+  const [recipient, setRecipient] = useState(""); const [item, setItem] = useState(""); const [amount, setAmount] = useState("");
+  const gifts = S.getGiftsByHoliday(holidayKey);
+  const total = gifts.reduce((s, g) => s + g.amount, 0); const bought = gifts.filter(g => g.bought).length;
+  return <div className="bg-bg2 rounded-lg p-2 mt-1.5 space-y-1.5">
+    <div className="text-[9px] font-bold opacity-60">Qua tang ({bought}/{gifts.length}{total > 0 ? ` · ${fmtCurrency(total)}` : ""})</div>
+    <div className="flex gap-1">
+      <input value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="Cho ai" className={input} />
+      <input value={item} onChange={e => setItem(e.target.value)} placeholder="Mua gi" className={input} />
+    </div>
+    <div className="flex gap-1"><MoneyInput value={amount} onChange={setAmount} placeholder="So tien" /><button onClick={() => { if (!item.trim()) return; S.addGift({ holidayKey, recipient: recipient || "—", itemName: item.trim(), amount: parseMoney(amount) || 0, note: null }); setRecipient(""); setItem(""); setAmount(""); onChanged(); }} className="px-3 min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold shrink-0">+</button></div>
+    {gifts.map(g => <div key={g.id} className="flex items-center gap-2 py-0.5 group">
+      <button onClick={() => { S.toggleGiftBought(g.id); onChanged(); }} className={`w-4 h-4 rounded border-2 flex items-center justify-center text-[8px] shrink-0 ${g.bought ? "bg-green border-green" : "border-line"}`}>{g.bought && "✓"}</button>
+      <span className={`text-[10px] flex-1 truncate ${g.bought ? "line-through opacity-50" : ""}`}>{g.recipient} ← {g.itemName}</span>
+      {g.amount > 0 && <span className="text-[9px] opacity-60 tnum shrink-0">{fmtCurrency(g.amount)}</span>}
+      <button onClick={() => { S.deleteGift(g.id); onChanged(); }} className="text-[9px] opacity-0 group-hover:opacity-100 text-mute hover:text-red shrink-0">✕</button>
+    </div>)}
+  </div>;
+}
+
 export function HolidaysManager({ onChanged }: { onChanged: () => void }) {
   void onChanged;
   const [name, setName] = useState(""); const [date, setDate] = useState(""); const [note, setNote] = useState("");
@@ -236,31 +290,51 @@ export function HolidaysManager({ onChanged }: { onChanged: () => void }) {
   const nextMonth = holidays.find(h => h.monthLabel !== curMonth)?.monthLabel || "";
   const curHolidays = holidays.filter(h => h.monthLabel === curMonth);
   const nextHolidays = holidays.filter(h => h.monthLabel === nextMonth);
-  return <div className="p-3 space-y-2">
+  const pinned = S.getFestiveMain();
+  const [expanded, setExpanded] = useState<string | null>(null);
+  return <div className="p-3 space-y-1.5">
     <div className="text-[10px] font-bold">Đếm ngược lễ & sự kiện</div>
-    <div className="flex gap-1.5"><input value={name} onChange={e => setName(e.target.value)} placeholder="Tên sự kiện cá nhân" className={input} /><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${input} shrink-0 w-28`} /><button onClick={() => { if (!name.trim() || !date) return; S.addCustomEvent({ name: name.trim(), date, note: note.trim() || null }); setName(""); setDate(""); setNote(""); onChanged(); }} className="px-3 min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold shrink-0">+</button></div>
+    {/* Special holidays — compact list, bấm để mở chi tiết */}
+    <div className="text-[8px] font-bold text-mute uppercase">Lễ đặc biệt (6)</div>
+    {SPECIAL_HOLIDAYS.map(sh => {
+      const info = getSpecialHolidayDate(sh.key); if (!info) return null;
+      const isPinned = pinned.includes(sh.key); const isExp = expanded === sh.key;
+      return <div key={sh.key}>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setExpanded(isExp ? null : sh.key)} className="flex-1 flex items-center gap-2 text-left">
+            <span className="text-[12px]">{({ xmas: "🎄", tet: "🏮", love: "❤️", women: "🌸", vnwomen: "🌺", teacher: "📚" } as Record<string, string>)[sh.theme]}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-bold truncate">{info.name.split("(")[0]}</div>
+              <div className="text-[8px] text-mute">{info.daysLeft === 0 ? "HOM NAY!" : `con ${info.daysLeft} ngay`}</div>
+            </div>
+            <span className="text-[9px] font-bold tnum">{info.daysLeft}d</span>
+          </button>
+          <button onClick={() => { S.toggleFestiveMain(sh.key); onChanged(); }} title={isPinned ? "Bo khoi track chinh" : "Ghim len track chinh"} className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold ${isPinned ? "bg-green/15 text-green border border-green/20" : "bg-bg2 border border-line text-mute"}`}>{isPinned ? "✓" : "📌"}</button>
+        </div>
+        {isExp && (
+          <div className="mt-1 space-y-1.5">
+            <ThemedCountdown theme={sh.theme} name={info.name} daysLeft={info.daysLeft} date={info.date} />
+            <GiftSection holidayKey={sh.key} onChanged={onChanged} />
+          </div>
+        )}
+      </div>;
+    })}
+    {/* Custom events */}
+    <div className="text-[8px] font-bold text-mute uppercase pt-1">Sự kiện cá nhân</div>
+    <div className="flex gap-1.5"><input value={name} onChange={e => setName(e.target.value)} placeholder="Tên sự kiện" className={input} /><input type="date" value={date} onChange={e => setDate(e.target.value)} className={`${input} shrink-0 w-28`} /><button onClick={() => { if (!name.trim() || !date) return; S.addCustomEvent({ name: name.trim(), date, note: note.trim() || null }); setName(""); setDate(""); setNote(""); onChanged(); }} className="px-3 min-h-[40px] bg-ink text-bg rounded-lg text-[10px] font-bold shrink-0">+</button></div>
     {name && <input value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú" className={input} />}
-    {/* Festive countdown for Christmas + Tet — always visible */}
-    {(() => {
-      const now = new Date();
-      const y = now.getFullYear();
-      const xmas = { name: "Giang Sinh (25/12)", daysLeft: daysUntil(`${y}-12-25`), date: `${y}-12-25` };
-      const xmasNext = daysUntil(xmas.date) < 0 ? { ...xmas, date: `${y+1}-12-25`, daysLeft: daysUntil(`${y+1}-12-25`) } : xmas;
-      const tetApprox = { name: "Tet Nguyen Dan", daysLeft: daysUntil(`${y}-02-10`), date: `${y}-02-10` };
-      const tetNext = tetApprox.daysLeft < 0 ? { ...tetApprox, date: `${y+1}-02-10`, daysLeft: daysUntil(`${y+1}-02-10`) } : tetApprox;
-      return <div className="space-y-1.5"><FestiveCountdown {...xmasNext} /><FestiveCountdown {...tetNext} /></div>;
-    })()}
     {[...custom].sort((a, b) => a.date.localeCompare(b.date)).filter(e => daysUntil(e.date) >= 0).map(ev => <div key={ev.id} className={`flex gap-2 items-center rounded-lg border px-2 py-1.5 ${daysUntil(ev.date) === 0 ? "border-gold/40 bg-gold/5" : daysUntil(ev.date) <= 3 ? "border-blue/30" : "border-line bg-bg2"}`}>
-      <div className="flex-1"><div className="text-[10px] font-bold">{ev.name}</div><div className={`text-[9px] ${daysUntil(ev.date) === 0 ? "text-gold font-bold" : daysUntil(ev.date) <= 3 ? "text-blue" : "text-mute"}`}>{daysUntil(ev.date) === 0 ? "HÔM NAY!" : daysUntil(ev.date) === 1 ? "NGÀY MAI" : `còn ${daysUntil(ev.date)} ngày`} · {fmtDateDisp(ev.date)}</div></div>
+      <div className="flex-1"><div className="text-[10px] font-bold">{ev.name}</div><div className={`text-[9px] ${daysUntil(ev.date) === 0 ? "text-gold font-bold" : daysUntil(ev.date) <= 3 ? "text-blue" : "text-mute"}`}>{daysUntil(ev.date) === 0 ? "HOM NAY!" : daysUntil(ev.date) === 1 ? "NGAY MAI" : `con ${daysUntil(ev.date)} ngay`} · {fmtDateDisp(ev.date)}</div></div>
       <button onClick={() => { S.deleteCustomEvent(ev.id); onChanged(); }} className="w-7 h-7 text-mute">✕</button>
     </div>)}
+    {/* Regular VN holidays by month */}
     {curHolidays.length > 0 && <div className="text-[8px] font-bold text-mute uppercase pt-1">{curMonth}</div>}
     {curHolidays.map(h => <div key={h.date + h.name} className={`flex gap-2 items-center rounded-lg border px-2 py-1.5 ${h.daysLeft === 0 ? "border-gold/40 bg-gold/5" : "border-line bg-bg2"}`}>
-      <div className="flex-1"><div className="text-[10px] font-bold">{h.name}</div><div className={`text-[9px] ${h.daysLeft === 0 ? "text-gold font-bold" : h.daysLeft <= 3 ? "text-blue" : "text-mute"}`}>{h.daysLeft === 0 ? "HÔM NAY!" : h.daysLeft === 1 ? "NGÀY MAI" : `còn ${h.daysLeft} ngày`} · {fmtDateDisp(h.date)}</div></div>
+      <div className="flex-1"><div className="text-[10px] font-bold">{h.name}</div><div className={`text-[9px] ${h.daysLeft === 0 ? "text-gold font-bold" : h.daysLeft <= 3 ? "text-blue" : "text-mute"}`}>{h.daysLeft === 0 ? "HOM NAY!" : h.daysLeft === 1 ? "NGAY MAI" : `con ${h.daysLeft} ngay`} · {fmtDateDisp(h.date)}</div></div>
     </div>)}
     {nextHolidays.length > 0 && <div className="text-[8px] font-bold text-mute uppercase pt-1">{nextMonth}</div>}
     {nextHolidays.map(h => <div key={h.date + h.name} className={`flex gap-2 items-center rounded-lg border px-2 py-1.5 ${h.daysLeft === 0 ? "border-gold/40 bg-gold/5" : "border-line bg-bg2"}`}>
-      <div className="flex-1"><div className="text-[10px] font-bold">{h.name}</div><div className={`text-[9px] ${h.daysLeft === 0 ? "text-gold font-bold" : "text-mute"}`}>{h.daysLeft === 0 ? "HÔM NAY!" : `còn ${h.daysLeft} ngày`} · {fmtDateDisp(h.date)}</div></div>
+      <div className="flex-1"><div className="text-[10px] font-bold">{h.name}</div><div className={`text-[9px] ${h.daysLeft === 0 ? "text-gold font-bold" : "text-mute"}`}>{h.daysLeft === 0 ? "HOM NAY!" : `con ${h.daysLeft} ngay`} · {fmtDateDisp(h.date)}</div></div>
     </div>)}
   </div>;
 }

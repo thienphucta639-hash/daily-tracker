@@ -117,6 +117,17 @@ body {
 @keyframes goldShimmer { 0%,100% { color: #ffd700; } 50% { color: #fff5b0; } }
 .gold-shimmer { animation: goldShimmer 2s ease-in-out infinite; }
 
+/* ═══ THEMED HOLIDAY CARDS ═══ */
+.holiday-love { background: linear-gradient(135deg, #4c0519 0%, #9f1239 40%, #e11d48 70%, #fb7185 100%); }
+.holiday-women { background: linear-gradient(135deg, #4a044e 0%, #86198f 40%, #c026d3 70%, #f0abfc 100%); }
+.holiday-vnwomen { background: linear-gradient(135deg, #2e1065 0%, #6b21a8 40%, #9333ea 70%, #d8b4fe 100%); }
+.holiday-teacher { background: linear-gradient(135deg, #0c2d48 0%, #1565c0 40%, #42a5f5 70%, #ffb74d 100%); }
+
+@keyframes heartPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+.heart-pulse { animation: heartPulse 1.5s ease-in-out infinite; display: inline-block; }
+@keyframes sparkle { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+.sparkle { animation: sparkle 2s ease-in-out infinite; display: inline-block; }
+
 input, textarea, select {
   font-family: inherit;
   color: inherit;

@@ -62,6 +62,28 @@ export function getCurrentAndNextMonthHolidays(): { name: string; date: string; 
   return out;
 }
 
+// Special holidays that can be pinned to main page with festive countdown
+export interface SpecialHoliday { key: string; name: string; month: number; day: number; theme: "xmas" | "tet" | "women" | "love" | "vnwomen" | "teacher" }
+export const SPECIAL_HOLIDAYS: SpecialHoliday[] = [
+  { key: "love", name: "Le Tinh Nhan (14/2)", month: 2, day: 14, theme: "love" },
+  { key: "women", name: "Quoc Te Phu Nu (8/3)", month: 3, day: 8, theme: "women" },
+  { key: "tet", name: "Tet Nguyen Dan", month: 2, day: 10, theme: "tet" },
+  { key: "vnwomen", name: "Phu Nu Viet Nam (20/10)", month: 10, day: 20, theme: "vnwomen" },
+  { key: "teacher", name: "Nha Giao Viet Nam (20/11)", month: 11, day: 20, theme: "teacher" },
+  { key: "xmas", name: "Giang Sinh (25/12)", month: 12, day: 25, theme: "xmas" },
+];
+
+export function getSpecialHolidayDate(key: string): { name: string; date: string; daysLeft: number; theme: string } | null {
+  const h = SPECIAL_HOLIDAYS.find(s => s.key === key);
+  if (!h) return null;
+  const now = new Date();
+  const y = now.getFullYear();
+  let date = formatDate(new Date(y, h.month - 1, h.day));
+  let daysLeft = Math.round((new Date(date + "T00:00:00").getTime() - new Date(formatDate(now) + "T00:00:00").getTime()) / 86400000);
+  if (daysLeft < 0) { date = formatDate(new Date(y + 1, h.month - 1, h.day)); daysLeft = Math.round((new Date(date + "T00:00:00").getTime() - new Date(formatDate(now) + "T00:00:00").getTime()) / 86400000); }
+  return { name: h.name, date, daysLeft, theme: h.theme };
+}
+
 // Keep for backward compat — returns VN holidays only
 export function getUpcomingHolidays(count: number = 5): { name: string; date: string; daysLeft: number; christian?: boolean }[] {
   const todayStr = formatDate(new Date());

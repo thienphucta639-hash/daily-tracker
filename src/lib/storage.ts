@@ -425,6 +425,7 @@ export function exportAll(): string {
     expiry: load<ExpiryItem>("t_expiry"), recurring: load<RecurringItem>("t_recurring"),
     places: load<PlaceItem>("t_places"), borrows: load<BorrowItem>("t_borrows"), top3: load<Top3Day>("t_top3"),
     checklists: load<Checklist>("t_checklists"), events: load<CustomEvent>("t_events"),
+    gifts: load<GiftItem>("t_gifts"),
   }, null, 2);
 }
 
@@ -458,6 +459,7 @@ export function importAll(json: string): boolean {
     if (d.top3) save("t_top3", d.top3);
     if (d.checklists) save("t_checklists", d.checklists);
     if (d.events) save("t_events", d.events);
+    if (d.gifts) save("t_gifts", d.gifts);
     return true;
   } catch { return false; }
 }
@@ -1014,7 +1016,63 @@ export function deleteCustomEvent(id: string) { save("t_events", load<CustomEven
 export function getSeenKey(key: string): boolean { return !!localStorage.getItem(`t_pet_seen_${key}`); }
 export function markSeenKey(key: string) { localStorage.setItem(`t_pet_seen_${key}`, new Date().toISOString()); }
 
-// ═══ AB NORMAL SPEND CHECK ═══
+// ═══ MONTHLY REPORT ═══
+export interface MonthReport {
+  month: string; // "2025-08"
+  totalSpent: number;
+  categoryBreakdown: { category: string; total: number; count: number }[];
+  dayCount: number;
+  daysOverLimit: { date: string; total: number }[];
+  avgPerDay: number;
+}
+export function getMonthReport(year: number, month: number): MonthReport {
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const allExps = load<Expense>("t_exps").filter(e => e.date.startsWith(monthStr));
+  const totalSpent = allExps.reduce((s, e) => s + e.amount, 0);
+  const byDay: Record<string, number> = {};
+  const byCat: Record<string, { total: number; count: number }> = {};
+  allExps.forEach(e => {
+    byDay[e.date] = (byDay[e.date] || 0) + e.amount;
+    if (!byCat[e.category]) byCat[e.category] = { total: 0, count: 0 };
+    byCat[e.category].total += e.amount;
+    byCat[e.category].count++;
+  });
+  const daysOverLimit = Object.entries(byDay).filter(([_, t]) => t > 150000).map(([date, total]) => ({ date, total })).sort((a, b) => b.total - a.total);
+  const categoryBreakdown = Object.entries(byCat).map(([category, v]) => ({ category, ...v })).sort((a, b) => b.total - a.total);
+  const uniqueDays = new Set(allExps.map(e => e.date)).size;
+  return { month: monthStr, totalSpent, categoryBreakdown, dayCount: uniqueDays, daysOverLimit, avgPerDay: uniqueDays > 0 ? Math.round(totalSpent / uniqueDays) : 0 };
+}
+export function getLastReportMonth(): string | null { return localStorage.getItem("t_last_report_month"); }
+export function setLastReportMonth(month: string) { localStorage.setItem("t_last_report_month", month); }
+
+// ═══ FESTIVE MAIN PAGE SETTINGS (key: t_festive_main) ═══
+export function getFestiveMain(): string[] {
+  try { return JSON.parse(localStorage.getItem("t_festive_main") || "[]"); } catch { return []; }
+}
+export function toggleFestiveMain(key: string) {
+  const cur = getFestiveMain();
+  const next = cur.includes(key) ? cur.filter(k => k !== key) : [...cur, key];
+  localStorage.setItem("t_festive_main", JSON.stringify(next));
+}
+
+// ═══ GIFTS — quà mua cho ngày lễ (key: t_gifts) ═══
+export interface GiftItem {
+  id: string; holidayKey: string; recipient: string; itemName: string;
+  amount: number; bought: boolean; note: string | null; createdAt: string;
+}
+export function getGifts(): GiftItem[] { return load<GiftItem>("t_gifts"); }
+export function getGiftsByHoliday(holidayKey: string): GiftItem[] { return getGifts().filter(g => g.holidayKey === holidayKey); }
+export function addGift(g: Omit<GiftItem, "id" | "createdAt" | "bought">): GiftItem {
+  const all = load<GiftItem>("t_gifts"); const n = { ...g, id: uid(), bought: false, createdAt: new Date().toISOString() };
+  all.push(n); save("t_gifts", all); return n;
+}
+export function toggleGiftBought(id: string) {
+  const all = load<GiftItem>("t_gifts"); const g = all.find(x => x.id === id);
+  if (g) g.bought = !g.bought; save("t_gifts", all);
+}
+export function deleteGift(id: string) { save("t_gifts", load<GiftItem>("t_gifts").filter(g => g.id !== id)); }
+
+// ═══ MONTHLY REPORT ═══
 export function getSpendAnomaly(): { today: number; avg: number; ratio: number } | null {
   const today = formatDate(new Date());
   const todaySpent = getExpenses(today).reduce((s, e) => s + e.amount, 0);
